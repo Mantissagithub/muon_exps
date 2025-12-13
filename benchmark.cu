@@ -37,9 +37,10 @@ void benchmark_muon_step(int N, int M, int iterations=1000) {
 int main() {
   // chose this shapes from llama 3.1 8b model arch
     vector<pair<int,int>> sizes = {
+        {1024, 1024},
+        {2048, 2048},
         {4096, 4096},
-        {4096, 11008},
-        {11008, 4096}
+        {8192, 8192},
     };
 
     for(auto& sz : sizes) {
