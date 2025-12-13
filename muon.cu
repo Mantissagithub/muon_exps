@@ -141,10 +141,10 @@ void newton_schulz_launch(float* __restrict__ d_input, float* __restrict__ d_out
   }
 
   if(transposed){
-    CUBLAS_CHECK(cublasSgeam(handle, CUBLAS_OP_T, CUBLAS_OP_N, orig_M, orig_N, &alpha, X, working_N, &beta, X, working_N, d_output, orig_N));
+    CUBLAS_CHECK(cublasSgeam(handle, CUBLAS_OP_T, CUBLAS_OP_N, orig_N, orig_M, &alpha, Y, working_N, &beta, Y, working_N, d_output, orig_N));
   } else {
-    if(X != d_output){
-      CUDA_CHECK(cudaMemcpy(d_output, X, size_input, cudaMemcpyDeviceToDevice));
+    if(Y != d_output){
+      CUDA_CHECK(cudaMemcpy(d_output, Y, size_input, cudaMemcpyDeviceToDevice));
     }
   }
 
