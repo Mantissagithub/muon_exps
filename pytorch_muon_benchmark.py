@@ -3,7 +3,7 @@ from torch.optim import Muon
 import time
 
 device = torch.device("cuda")
-sizes = [[4096, 4096], [4096, 11008], [11008, 4096]]
+sizes = [[1024, 1024], [2048, 2048], [4096, 4096], [8192, 8192]]
 for N, M in sizes:
   W = torch.randn(N, M, device=device, requires_grad=True)
   optimizer = Muon([W], lr=1e-3, weight_decay=0.1)
