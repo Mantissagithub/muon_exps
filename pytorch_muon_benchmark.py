@@ -3,7 +3,14 @@ from torch.optim import Muon
 import time
 
 device = torch.device("cuda")
-sizes = [[1024, 1024], [2048, 2048], [4096, 4096]]
+sizes = [
+    [1024, 1024],  # ρ=1.0
+    [2048, 2048],  # ρ=1.0
+    [4096, 4096],  # ρ=1.0
+    [4096, 1024],  # ρ=4.0
+    [8192, 2048],  # ρ=4.0
+    [8192, 1024],  # ρ=8.0
+]
 for N, M in sizes:
   W = torch.randn(N, M, device=device, requires_grad=True)
   optimizer = Muon([W], lr=1e-3, weight_decay=0.1)
@@ -16,4 +23,4 @@ for N, M in sizes:
       optimizer.step()
       optimizer.zero_grad()
   torch.cuda.synchronize()
-  print(f"PyTorch Muon: {(time.time() - start)/1000*1000:.2f} ms/step")
+  print(f"PyTorch Muon: {(time.time() - start)/1000*1000:.2f} ms/step (N={N}, M={M})")
