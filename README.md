@@ -135,9 +135,3 @@ dominate cost — exactly the regime Tridao's blog targets. On square shapes
 and v1 wins by ~30%.
 
 ---
-
-Author: MantissaGitHub (pradheep.dev)
-
-Hardware: NVIDIA A100-SXM4-80GB
-
-Date: Dec 13, 2025
