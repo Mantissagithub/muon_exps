@@ -116,9 +116,8 @@ void newton_schulz_launch(float* __restrict__ d_input, float* __restrict__ d_out
   float* Y = d_output;
 
   for(int i=0;i<iterations;i++){
-    CUBLAS_CHECK(cublasSgeam(handle, CUBLAS_OP_T, CUBLAS_OP_N, working_M, working_N, &alpha, X, working_N, &beta, X, working_N, d_input_transpose, working_M));
-
-    CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, working_N, working_N, working_M, &alpha, X, working_N, d_input_transpose, working_M, &beta, d_xxt, working_N));
+    // d_xxt = X * X^T -- fold transpose into gemm OP_T (avoids invalid in-place sgeam aliasing on non-square X)
+    CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, working_N, working_N, working_M, &alpha, X, working_N, X, working_N, &beta, d_xxt, working_N));
 
     CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, working_N, working_N, working_N, &alpha, d_xxt, working_N, d_xxt, working_N, &beta, d_AA, working_N));
 
@@ -141,7 +140,16 @@ void newton_schulz_launch(float* __restrict__ d_input, float* __restrict__ d_out
   }
 
   if(transposed){
-    CUBLAS_CHECK(cublasSgeam(handle, CUBLAS_OP_T, CUBLAS_OP_N, orig_N, orig_M, &alpha, Y, working_N, &beta, Y, working_N, d_output, orig_N));
+    // Y may alias d_output (depends on swap parity); route through d_input_transpose so the
+    // sgeam is never in-place on a non-square shape.
+    float* src = Y;
+    if(src == d_output){
+      CUDA_CHECK(cudaMemcpy(d_input_transpose, src, (size_t)working_N * working_M * sizeof(float), cudaMemcpyDeviceToDevice));
+      src = d_input_transpose;
+    }
+    // B is unused (beta=0) but cublas validates ldb against opB's shape (m×n with OP_N → ldb ≥ orig_N).
+    // Pass d_output with ldb=orig_N to satisfy the constraint.
+    CUBLAS_CHECK(cublasSgeam(handle, CUBLAS_OP_T, CUBLAS_OP_N, orig_N, orig_M, &alpha, src, working_N, &beta, d_output, orig_N, d_output, orig_N));
   } else {
     if(Y != d_output){
       CUDA_CHECK(cudaMemcpy(d_output, Y, size_input, cudaMemcpyDeviceToDevice));
