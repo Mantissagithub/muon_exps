@@ -177,3 +177,5 @@ for this saved run:
 - `normuon` is clearly behind on this workload.
 
 `artifacts/char_lm/loss_curves.png` is the quick read: one clean static curve with an inset for the late-run spread. `artifacts/char_lm/loss_report.html` keeps the fuller browser view.
+
+![TinyShakespeare validation loss](artifacts/char_lm/loss_curves.png)
