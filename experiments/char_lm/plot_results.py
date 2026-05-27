@@ -35,16 +35,26 @@ DISPLAY_NAMES = {
 }
 
 PALETTE = {
-    "adamw": "#111827",
+    "adamw": "#1f2937",
     "torch_muon": "#2563eb",
     "muon_like": "#0f766e",
     "normuon": "#dc2626",
-    "u_normuon": "#ea580c",
+    "u_normuon": "#c2410c",
     "aurora": "#7c3aed",
     "riemann_aurora": "#9333ea",
-    "amuse_muon": "#0891b2",
-    "sf_muon_fixed_beta_0.6": "#65a30d",
-    "sf_muon_fixed_beta_0.9": "#c2410c",
+    "amuse_muon": "#0f9d7a",
+    "sf_muon_fixed_beta_0.6": "#84a11d",
+    "sf_muon_fixed_beta_0.9": "#b45309",
+}
+
+SURFACE = {
+    "page": "#f5f1e8",
+    "panel": "#fcfaf6",
+    "panel_alt": "#f3ede2",
+    "grid": "#ddd4c5",
+    "border": "#d3c8b6",
+    "text": "#201a14",
+    "muted": "#6d6457",
 }
 
 
@@ -161,143 +171,20 @@ def build_svg_path(rows, x0, y0, width, height, xmin, xmax, ymin, ymax):
 
 
 def render_html_report(args, summaries):
-    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
-    all_val_losses = [row["val_loss"] for summary in summaries for row in summary["rows"]]
-    ymin = min(all_val_losses)
-    ymax = max(all_val_losses)
-    yrange = max(ymax - ymin, 1e-9)
-    ypad = yrange * 0.05
-    ymin -= ypad
-    ymax += ypad
-
-    chart_w = 920
-    chart_h = 500
-    chart_left = 74
-    chart_top = 28
-    plot_w = 720
-    plot_h = 404
-    chart_right = chart_left + plot_w
-    chart_bottom = chart_top + plot_h
-
     leader = summaries[0]
     runner_up = summaries[1] if len(summaries) > 1 else None
-    gap = runner_up["best_val"] - leader["best_val"] if runner_up else 0.0
-    fastest = min(summaries, key=lambda item: item["final_elapsed_s"])
-    sharpest_finish = min(summaries, key=lambda item: item["final_val"])
     image_name = html.escape(args.out.name)
+    beta_name = html.escape(args.beta_out.name)
+    dist_name = html.escape(args.distance_out.name)
+    cosine_name = html.escape(args.cosine_out.name)
 
-    grid_lines = []
-    for frac in [0.0, 0.25, 0.5, 0.75, 1.0]:
-        y = chart_top + plot_h * frac
-        loss = ymax - (y - chart_top) / plot_h * (ymax - ymin)
-        grid_lines.append(
-            f'<line x1="{chart_left}" y1="{y:.2f}" x2="{chart_right}" y2="{y:.2f}" class="grid-line"/>'
-            f'<text x="{chart_left - 14}" y="{y + 4:.2f}" class="axis-label axis-label-y">{fmt_loss(loss)}</text>'
-        )
-
-    x_ticks = []
-    tick_count = 6
-    for idx in range(tick_count + 1):
-        step = int(round(max_step * idx / tick_count))
-        x = chart_left + plot_w * idx / tick_count
-        x_ticks.append(
-            f'<line x1="{x:.2f}" y1="{chart_top}" x2="{x:.2f}" y2="{chart_bottom}" class="grid-line grid-line-v"/>'
-            f'<text x="{x:.2f}" y="{chart_bottom + 28}" class="axis-label axis-label-x">{fmt_step(step)}</text>'
-        )
-
-    line_layers = []
-    endpoint_labels = []
-    ordered_for_labels = sorted(summaries, key=lambda item: item["final_val"])
-    label_gap = max(18.0, plot_h * 0.042)
-    label_targets = spread_positions(
-        [
-            chart_top + plot_h * (1.0 - ((item["final_val"] - ymin) / max(ymax - ymin, 1e-9)))
-            for item in ordered_for_labels
-        ],
-        label_gap,
-    )
-    label_map = {
-        item["optimizer"]: target
-        for item, target in zip(ordered_for_labels, label_targets)
-    }
-
-    for idx, summary in enumerate(summaries):
-        color = PALETTE.get(summary["optimizer"], "#334155")
-        path_d, coords = build_svg_path(summary["rows"], chart_left, chart_top, plot_w, plot_h, 0, max_step, ymin, ymax)
-        if not coords:
-            continue
-        best = summary["rows"][summary["best_idx"]]
-        best_x = chart_left + plot_w * (best["step"] / max(max_step, 1))
-        best_y = chart_top + plot_h * (1.0 - ((best["val_loss"] - ymin) / max(ymax - ymin, 1e-9)))
-        final = summary["rows"][-1]
-        final_x = coords[-1][0]
-        final_y = coords[-1][1]
-        label_y = label_map[summary["optimizer"]]
-        delay = 0.08 * idx
-        line_layers.append(
-            f"""
-            <g class="series" style="--series-color:{color}; --delay:{delay:.2f}s">
-              <path d="{path_d}" class="series-line"/>
-              <circle cx="{best_x:.2f}" cy="{best_y:.2f}" r="6.4" class="best-ring"/>
-              <circle cx="{best_x:.2f}" cy="{best_y:.2f}" r="2.6" class="best-core"/>
-              <path d="M {final_x:.2f} {final_y:.2f} L {chart_right + 18:.2f} {label_y:.2f}" class="label-link"/>
-            </g>
-            """
-        )
-        endpoint_labels.append(
-            f"""
-            <div class="endpoint-tag" style="top:{label_y - 14:.2f}px; color:{color}; border-color:{color}22; background:{color}10;">
-              <span class="endpoint-name">{html.escape(summary['label'])}</span>
-              <span class="endpoint-value">{fmt_loss(summary['final_val'])}</span>
-            </div>
-            """
-        )
-
-    rank_cards = []
-    rank_span = max(item["best_val"] for item in summaries) - min(item["best_val"] for item in summaries)
-    rank_span = max(rank_span, 1e-9)
-    for idx, summary in enumerate(summaries, start=1):
-        color = PALETTE.get(summary["optimizer"], "#334155")
-        fill = 0.35 + 0.65 * (1.0 - ((summary["best_val"] - leader["best_val"]) / rank_span))
-        rank_cards.append(
-            f"""
-            <div class="rank-row" style="--fill:{fill:.4f}; --rank-color:{color};">
-              <div class="rank-head">
-                <span class="rank-index">{idx:02d}</span>
-                <span class="rank-name">{html.escape(summary['label'])}</span>
-                <span class="rank-score">{fmt_loss(summary['best_val'])}</span>
-              </div>
-              <div class="rank-bar"><span></span></div>
-              <div class="rank-meta">best @ step {fmt_step(summary['best_step'])}</div>
-            </div>
-            """
-        )
-
-    time_sorted = sorted(summaries, key=lambda item: item["final_elapsed_s"])
-    max_elapsed = max(item["final_elapsed_s"] for item in time_sorted)
-    time_cards = []
-    for idx, summary in enumerate(time_sorted):
-        color = PALETTE.get(summary["optimizer"], "#334155")
-        fill = summary["final_elapsed_s"] / max(max_elapsed, 1e-9)
-        time_cards.append(
-            f"""
-            <div class="time-row" style="--fill:{fill:.4f}; --rank-color:{color}; --delay:{0.08 * idx:.2f}s;">
-              <div class="time-head">
-                <span class="time-name">{html.escape(summary['label'])}</span>
-                <span class="time-score">{fmt_seconds(summary['final_elapsed_s'])}</span>
-              </div>
-              <div class="time-bar"><span></span></div>
-            </div>
-            """
-        )
-
-    table_rows = []
+    rows = []
     for summary in summaries:
         final = summary["rows"][-1]
-        table_rows.append(
+        rows.append(
             f"""
             <tr>
-              <td><span class="swatch" style="background:{PALETTE.get(summary['optimizer'], '#334155')}"></span>{html.escape(summary['label'])}</td>
+              <td>{html.escape(summary['label'])}</td>
               <td>{fmt_loss(summary['best_val'])}</td>
               <td>{fmt_loss(summary['final_val'])}</td>
               <td>{fmt_step(summary['best_step'])}</td>
@@ -314,602 +201,153 @@ def render_html_report(args, summaries):
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TinyShakespeare optimizer report</title>
   <style>
-    :root {{
-      --bg: #f6f4ee;
-      --panel: rgba(255, 255, 255, 0.84);
-      --panel-strong: #ffffff;
-      --ink: #171717;
-      --muted: #667085;
-      --hairline: rgba(23, 23, 23, 0.12);
-      --shadow: 0 24px 70px rgba(22, 30, 45, 0.10);
-      --display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
-      --body: "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
-      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-    }}
-    * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
-      font-family: var(--body);
-      color: var(--ink);
-      background:
-        radial-gradient(circle at 16% 0%, rgba(255, 107, 0, 0.10), transparent 30%),
-        radial-gradient(circle at 84% 8%, rgba(0, 194, 168, 0.09), transparent 28%),
-        linear-gradient(180deg, #fbfaf7 0%, var(--bg) 100%);
-      min-height: 100vh;
+      background: #ffffff;
+      color: #111111;
+      font-family: "DejaVu Serif", "Times New Roman", serif;
     }}
-    body::before {{
-      content: "";
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      opacity: 0.08;
-      background-image:
-        linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
-      background-size: 18px 18px;
-      mask-image: linear-gradient(180deg, black 20%, transparent 100%);
-    }}
-    .page {{
-      width: min(1500px, calc(100vw - 40px));
-      margin: 0 auto;
-      padding: 30px 0 42px;
-    }}
-    .hero {{
-      display: grid;
-      grid-template-columns: 1.4fr 0.9fr;
-      gap: 18px;
-      align-items: end;
-      margin-bottom: 18px;
-    }}
-    .kicker {{
-      font-size: 12px;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      color: #8b6f47;
-      margin-bottom: 12px;
+    main {{
+      width: min(1120px, calc(100vw - 40px));
+      margin: 28px auto 40px;
     }}
     h1 {{
-      font-family: var(--display);
-      font-size: clamp(52px, 6.2vw, 84px);
-      line-height: 0.93;
-      margin: 0;
-      letter-spacing: -0.04em;
-      font-weight: 700;
+      font-size: 24px;
+      font-weight: 400;
+      margin: 0 0 6px;
     }}
-    .subtitle {{
-      margin-top: 14px;
-      max-width: 60ch;
-      color: var(--muted);
-      font-size: 16px;
-      line-height: 1.65;
-    }}
-    .hero-stats {{
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-    }}
-    .stat-card, .panel {{
-      position: relative;
-      overflow: hidden;
-      border: 1px solid var(--hairline);
-      background: var(--panel);
-      backdrop-filter: blur(12px);
-      box-shadow: var(--shadow);
-      border-radius: 26px;
-    }}
-    .stat-card {{
-      padding: 18px 18px 16px;
-    }}
-    .stat-label {{
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      font-size: 11px;
-    }}
-    .stat-value {{
-      margin-top: 10px;
-      font-size: 26px;
-      font-weight: 700;
-      letter-spacing: -0.03em;
-    }}
-    .stat-meta {{
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 13px;
-    }}
-    .dashboard {{
-      display: grid;
-      grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.78fr);
-      gap: 18px;
-    }}
-    .panel {{
-      padding: 22px;
-    }}
-    .panel h2 {{
-      margin: 0;
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 0.16em;
-      color: #7a7468;
-      font-weight: 600;
-    }}
-    .panel-title {{
-      display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      align-items: baseline;
-      margin-bottom: 16px;
-    }}
-    .panel-strong-label {{
-      font-size: 28px;
-      font-family: var(--display);
-      letter-spacing: -0.03em;
-    }}
-    .panel-note {{
-      color: var(--muted);
-      font-size: 13px;
-      font-family: var(--mono);
-    }}
-    .chart-frame {{
-      position: relative;
-      min-height: 0;
-      border-radius: 22px;
-      background: #ffffff;
-      border: 1px solid rgba(23, 23, 23, 0.08);
-      overflow: hidden;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.80);
-    }}
-    .chart-caption {{
-      position: absolute;
-      left: 24px;
-      top: 18px;
-      z-index: 2;
-      max-width: 360px;
-    }}
-    .chart-caption .eyebrow {{
-      font-size: 11px;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: #7f7464;
-    }}
-    .chart-caption h3 {{
-      margin: 8px 0 6px;
-      font-size: 30px;
-      line-height: 1.0;
-      font-family: var(--display);
-      letter-spacing: -0.04em;
-    }}
-    .chart-caption p {{
-      margin: 0;
-      color: var(--muted);
+    .deck {{
+      color: #333333;
       font-size: 14px;
       line-height: 1.5;
+      margin-bottom: 18px;
     }}
-    .chart-svg {{
+    .figure {{
+      margin: 18px 0 26px;
+    }}
+    .figure img {{
       width: 100%;
-      height: 560px;
       display: block;
+      border: 1px solid #d5d5d5;
     }}
-    .grid-line {{
-      stroke: rgba(23, 23, 23, 0.08);
-      stroke-width: 1;
+    .caption {{
+      margin-top: 8px;
+      font-size: 13px;
+      color: #333333;
+      line-height: 1.45;
     }}
-    .grid-line-v {{
-      stroke: rgba(23, 23, 23, 0.05);
-    }}
-    .axis-label {{
-      fill: #726c61;
-      font-family: var(--mono);
-      font-size: 12px;
-    }}
-    .axis-label-y {{ text-anchor: end; }}
-    .axis-label-x {{ text-anchor: middle; }}
-    .series-line {{
-      fill: none;
-      stroke: var(--series-color);
-      stroke-width: 3.2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      stroke-dasharray: 2000;
-      stroke-dashoffset: 2000;
-      animation: draw-line 2.1s cubic-bezier(.2,.7,.15,1) forwards;
-      animation-delay: var(--delay);
-    }}
-    .best-ring {{
-      fill: rgba(255,255,255,0.94);
-      stroke: var(--series-color);
-      stroke-width: 2.4;
-      opacity: 0;
-      animation: pop-in 0.5s ease forwards;
-      animation-delay: calc(var(--delay) + 1.3s);
-    }}
-    .best-core {{
-      fill: var(--series-color);
-      opacity: 0;
-      animation: pop-in 0.5s ease forwards;
-      animation-delay: calc(var(--delay) + 1.38s);
-    }}
-    .label-link {{
-      fill: none;
-      stroke: var(--series-color);
-      stroke-width: 1.4;
-      stroke-linecap: round;
-      opacity: 0;
-      animation: fade-in 0.45s ease forwards;
-      animation-delay: calc(var(--delay) + 1.45s);
-    }}
-    .endpoint-column {{
-      position: absolute;
-      inset: 0 18px 0 auto;
-      width: 190px;
-      pointer-events: none;
-    }}
-    .endpoint-tag {{
-      position: absolute;
-      right: 18px;
-      min-width: 160px;
-      display: flex;
-      justify-content: space-between;
+    .metrics {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
-      align-items: center;
-      padding: 8px 11px;
-      border: 1px solid;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 600;
-      backdrop-filter: blur(8px);
-      opacity: 0;
-      transform: translateX(16px);
-      animation: slide-in 0.55s cubic-bezier(.2,.8,.2,1) forwards;
-      animation-delay: 1.6s;
+      margin: 20px 0;
     }}
-    .endpoint-name {{
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 112px;
+    .metric {{
+      border: 1px solid #d5d5d5;
+      padding: 10px 12px;
     }}
-    .chart-axis-title {{
-      position: absolute;
-      color: #746e64;
+    .metric .k {{
       font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.08em;
+      color: #666666;
     }}
-    .chart-axis-title.x {{ left: 50%; bottom: 18px; transform: translateX(-50%); }}
-    .chart-axis-title.y {{ left: 8px; top: 52%; transform: rotate(-90deg) translateY(50%); transform-origin: left top; }}
-    .stack {{
-      display: grid;
-      gap: 18px;
-    }}
-    .rank-row, .time-row {{
-      padding: 14px 0 0;
-      border-top: 1px solid rgba(23, 23, 23, 0.08);
-    }}
-    .rank-row:first-child, .time-row:first-child {{
-      border-top: 0;
-      padding-top: 4px;
-    }}
-    .rank-head, .time-head {{
-      display: flex;
-      gap: 12px;
-      align-items: baseline;
-      justify-content: space-between;
-      margin-bottom: 8px;
-    }}
-    .rank-index {{
-      font-family: var(--mono);
-      font-size: 11px;
-      color: #7b7468;
-      letter-spacing: 0.12em;
-    }}
-    .rank-name, .time-name {{
-      flex: 1;
-      font-size: 15px;
-      font-weight: 600;
-    }}
-    .rank-score, .time-score {{
-      font-family: var(--mono);
-      font-size: 13px;
-    }}
-    .rank-meta {{
-      margin-top: 7px;
-      color: #746e64;
-      font-size: 12px;
-    }}
-    .rank-bar, .time-bar {{
-      width: 100%;
-      height: 8px;
-      background: rgba(23, 23, 23, 0.08);
-      border-radius: 999px;
-      overflow: hidden;
-    }}
-    .rank-bar span, .time-bar span {{
-      display: block;
-      height: 100%;
-      width: 100%;
-      transform-origin: left center;
-      transform: scaleX(var(--fill));
-      background: var(--rank-color);
-      border-radius: inherit;
-      animation: grow-bar 1s cubic-bezier(.2,.7,.2,1) both;
-    }}
-    .metrics-grid {{
-      display: grid;
-      grid-template-columns: 1.15fr 0.85fr;
-      gap: 18px;
-      margin-top: 18px;
-    }}
-    .table-wrap {{
-      overflow: auto;
-      border-radius: 20px;
-      border: 1px solid rgba(23, 23, 23, 0.08);
-      background: rgba(255,255,255,0.72);
+    .metric .v {{
+      margin-top: 6px;
+      font-size: 18px;
     }}
     table {{
       width: 100%;
       border-collapse: collapse;
-      min-width: 640px;
-    }}
-    th, td {{
-      padding: 13px 14px;
-      border-bottom: 1px solid rgba(23, 23, 23, 0.08);
-      text-align: left;
-      white-space: nowrap;
+      margin-top: 16px;
       font-size: 13px;
     }}
+    th, td {{
+      border: 1px solid #dcdcdc;
+      padding: 8px 10px;
+      text-align: left;
+    }}
     th {{
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      background: rgba(252, 249, 243, 0.96);
-      color: #6d685e;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      font-size: 11px;
+      font-weight: 600;
+      background: #f7f7f7;
     }}
-    tr:last-child td {{ border-bottom: 0; }}
-    .swatch {{
-      display: inline-block;
-      width: 10px;
-      height: 10px;
-      border-radius: 999px;
-      margin-right: 10px;
-      vertical-align: middle;
-    }}
-    .snapshot {{
-      position: relative;
-      border-radius: 22px;
-      overflow: hidden;
-      border: 1px solid rgba(23, 23, 23, 0.08);
-      background: rgba(255,255,255,0.82);
-    }}
-    .snapshot img {{
-      display: block;
-      width: 100%;
-      height: auto;
-    }}
-    .snapshot-badge {{
-      position: absolute;
-      left: 16px;
-      top: 16px;
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.82);
-      backdrop-filter: blur(8px);
-      border: 1px solid rgba(23,23,23,0.08);
-      font-size: 12px;
-      color: #5d584f;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }}
-    .read-card {{
-      margin-top: 16px;
+    .diag-grid {{
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
+      gap: 14px;
+      margin-top: 22px;
     }}
-    .read-pill {{
-      border: 1px solid rgba(23,23,23,0.08);
-      border-radius: 18px;
-      background: rgba(255,255,255,0.72);
-      padding: 14px;
+    .diag-grid img {{
+      width: 100%;
+      display: block;
+      border: 1px solid #d5d5d5;
     }}
-    .read-label {{
-      color: #7a7468;
-      text-transform: uppercase;
-      letter-spacing: 0.13em;
-      font-size: 10px;
-    }}
-    .read-value {{
-      margin-top: 8px;
-      font-size: 18px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }}
-    .read-note {{
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.45;
-    }}
-    @keyframes draw-line {{
-      to {{ stroke-dashoffset: 0; }}
-    }}
-    @keyframes grow-bar {{
-      from {{ transform: scaleX(0); }}
-      to {{ transform: scaleX(var(--fill)); }}
-    }}
-    @keyframes rise-in {{
-      from {{ opacity: 0; transform: translateY(18px); }}
-      to {{ opacity: 1; transform: translateY(0); }}
-    }}
-    @keyframes fade-in {{
-      to {{ opacity: 1; }}
-    }}
-    @keyframes pop-in {{
-      from {{ opacity: 0; transform: scale(0.7); transform-origin: center; }}
-      to {{ opacity: 1; transform: scale(1); }}
-    }}
-    @keyframes slide-in {{
-      to {{ opacity: 1; transform: translateX(0); }}
-    }}
-    @media (max-width: 1120px) {{
-      .hero,
-      .dashboard,
-      .metrics-grid {{
+    @media (max-width: 860px) {{
+      .metrics, .diag-grid {{
         grid-template-columns: 1fr;
       }}
-      .hero-stats {{
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }}
-    }}
-    @media (max-width: 780px) {{
-      .page {{ width: min(100vw - 20px, 100%); padding-top: 18px; }}
-      .hero-stats {{ grid-template-columns: 1fr; }}
-      .panel {{ padding: 16px; border-radius: 20px; }}
-      .chart-frame {{ min-height: 500px; }}
-      .chart-svg {{ height: 500px; }}
-      .endpoint-column {{ display: none; }}
-      .table-wrap {{ margin-top: 12px; }}
-      .read-card {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
 <body>
-  <main class="page">
-    <section class="hero">
-      <div>
-        <div class="kicker">char lm optimizer report</div>
-        <h1>TinyShakespeare<br>optimizer run</h1>
-        <div class="subtitle">
-          one long-form training comparison over the same model init and dataset split.
-          the view below shows the full validation trajectory, not just end-state numbers.
-        </div>
-      </div>
-      <div class="hero-stats">
-        <div class="stat-card">
-          <div class="stat-label">best validation</div>
-          <div class="stat-value">{html.escape(leader['label'])}</div>
-          <div class="stat-meta">{fmt_loss(leader['best_val'])} at step {fmt_step(leader['best_step'])}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">margin to next</div>
-          <div class="stat-value">{fmt_loss(gap)}</div>
-          <div class="stat-meta">{html.escape(runner_up['label']) if runner_up else "single run"}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">fastest wall time</div>
-          <div class="stat-value">{html.escape(fastest['label'])}</div>
-          <div class="stat-meta">{fmt_seconds(fastest['final_elapsed_s'])} to final checkpoint</div>
-        </div>
-      </div>
-    </section>
+  <main>
+    <h1>TinyShakespeare optimizer report</h1>
+    <div class="deck">
+      Same initialization, same train/validation split, and same seed across all compared optimizers.
+      The main figure emphasizes validation-loss trajectories; auxiliary figures isolate the AMUSE schedule and sequence diagnostics.
+    </div>
 
-    <section class="dashboard">
-      <div class="panel">
-        <div class="panel-title">
-          <div>
-            <h2>static trajectory</h2>
-            <div class="panel-strong-label">validation loss with late-run zoom</div>
-          </div>
-          <div class="panel-note">{fmt_step(max_step)} steps · {len(summaries)} optimizers</div>
-        </div>
-        <div class="chart-frame">
-          <img src="{image_name}" alt="Static validation loss plot" style="display:block;width:100%;height:auto;">
-        </div>
-        <div class="read-card">
-          <div class="read-pill">
-            <div class="read-label">winner</div>
-            <div class="read-value">{html.escape(leader['label'])} · {fmt_loss(leader['best_val'])}</div>
-            <div class="read-note">best validation at step {fmt_step(leader['best_step'])}</div>
-          </div>
-          <div class="read-pill">
-            <div class="read-label">next best gap</div>
-            <div class="read-value">{fmt_loss(gap)}</div>
-            <div class="read-note">margin over {html.escape(runner_up['label']) if runner_up else "the next run"}</div>
-          </div>
-          <div class="read-pill">
-            <div class="read-label">best final checkpoint</div>
-            <div class="read-value">{html.escape(sharpest_finish['label'])}</div>
-            <div class="read-note">final val {fmt_loss(sharpest_finish['final_val'])}</div>
-          </div>
-        </div>
+    <div class="metrics">
+      <div class="metric">
+        <div class="k">Best run</div>
+        <div class="v">{html.escape(leader['label'])} · {fmt_loss(leader['best_val'])}</div>
       </div>
+      <div class="metric">
+        <div class="k">Best step</div>
+        <div class="v">{fmt_step(leader['best_step'])}</div>
+      </div>
+      <div class="metric">
+        <div class="k">Margin to next</div>
+        <div class="v">{fmt_loss((runner_up['best_val'] - leader['best_val']) if runner_up else 0.0)}</div>
+      </div>
+    </div>
 
-      <div class="stack">
-        <div class="panel">
-          <div class="panel-title">
-            <div>
-              <h2>ranking</h2>
-              <div class="panel-strong-label">best validation loss</div>
-            </div>
-            <div class="panel-note">lower is better</div>
-          </div>
-          {''.join(rank_cards)}
-        </div>
-
-        <div class="panel">
-          <div class="panel-title">
-            <div>
-              <h2>runtime</h2>
-              <div class="panel-strong-label">wall time to final checkpoint</div>
-            </div>
-            <div class="panel-note">same hardware path</div>
-          </div>
-          {''.join(time_cards)}
-        </div>
+    <section class="figure">
+      <img src="{image_name}" alt="Validation loss comparison">
+      <div class="caption">
+        <strong>Figure 1.</strong> Validation loss against training step for the benchmarked optimizers.
+        The right panel zooms into the late-training region to expose the final spread between methods.
       </div>
     </section>
 
-    <section class="metrics-grid">
-      <div class="panel">
-        <div class="panel-title">
-          <div>
-            <h2>metrics table</h2>
-            <div class="panel-strong-label">checkpoint summary</div>
-          </div>
-          <div class="panel-note">best / final / speed</div>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>optimizer</th>
-                <th>best val</th>
-                <th>final val</th>
-                <th>best step</th>
-                <th>wall time</th>
-                <th>tokens/sec</th>
-              </tr>
-            </thead>
-            <tbody>
-              {''.join(table_rows)}
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Optimizer</th>
+          <th>Best val</th>
+          <th>Final val</th>
+          <th>Best step</th>
+          <th>Wall time</th>
+          <th>Tokens/sec</th>
+        </tr>
+      </thead>
+      <tbody>
+        {''.join(rows)}
+      </tbody>
+    </table>
 
-      <div class="panel">
-        <div class="panel-title">
-          <div>
-            <h2>artifact note</h2>
-            <div class="panel-strong-label">what to share</div>
-          </div>
-          <div class="panel-note">static only</div>
-        </div>
-        <div class="read-card" style="grid-template-columns:1fr;">
-          <div class="read-pill">
-            <div class="read-label">png</div>
-            <div class="read-value">loss_curves.png</div>
-            <div class="read-note">clean static chart, good for README and quick sharing.</div>
-          </div>
-          <div class="read-pill">
-            <div class="read-label">html</div>
-            <div class="read-value">loss_report.html</div>
-            <div class="read-note">same numbers with ranking, runtime, and checkpoint table.</div>
-          </div>
-        </div>
+    <section class="diag-grid">
+      <div class="figure">
+        <img src="{beta_name}" alt="AMUSE beta schedule">
+        <div class="caption"><strong>Figure 2.</strong> The AMUSE schedule parameter $\\beta_t$ over training.</div>
+      </div>
+      <div class="figure">
+        <img src="{dist_name}" alt="AMUSE sequence distances">
+        <div class="caption"><strong>Figure 3.</strong> Relative distances between the x, y, and z AMUSE sequences.</div>
+      </div>
+      <div class="figure">
+        <img src="{cosine_name}" alt="AMUSE update cosine similarity">
+        <div class="caption"><strong>Figure 4.</strong> Cosine similarity between consecutive AMUSE x-sequence updates.</div>
       </div>
     </section>
   </main>
@@ -1155,93 +593,97 @@ def render_clean_png(args, summaries):
     ymin = min(all_losses)
     ymax = max(all_losses)
     span = max(ymax - ymin, 1e-6)
+    plt.rcParams.update({
+        "font.family": "serif",
+        "font.serif": ["DejaVu Serif", "Times New Roman", "Times"],
+    })
+    fig = plt.figure(figsize=(11.6, 4.9), dpi=220, facecolor="white")
+    grid = GridSpec(1, 2, figure=fig, width_ratios=[1.85, 1.0], wspace=0.18)
+    ax = fig.add_subplot(grid[0, 0])
+    ax_zoom = fig.add_subplot(grid[0, 1])
 
-    fig, ax = plt.subplots(figsize=(10.8, 6.0), dpi=190, facecolor="#ffffff")
-    ax.set_facecolor("#ffffff")
-    for spine in ax.spines.values():
-        spine.set_color("#e5e7eb")
-        spine.set_linewidth(1.0)
-
-    ax.grid(axis="y", color="#edf1f5", linewidth=0.75)
-    ax.grid(axis="x", color="#f5f7fa", linewidth=0.55)
-    ax.tick_params(colors="#a3acba", labelsize=8)
-    ax.set_xlabel("Training step", color="#8b95a7", fontsize=8, labelpad=10)
-    ax.set_ylabel("Loss", color="#8b95a7", fontsize=8, labelpad=10)
-    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k" if x else "0k"))
-    ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
-    ax.set_xlim(0, max_step)
-    ax.set_ylim(max(0.0, ymin - span * 0.05), ymax + span * 0.04)
-
-    # Keep the main view readable, then use the inset for the late-run differences.
     show_order = sorted(summaries, key=lambda item: item["best_val"])
-    for summary in show_order:
-        color = PALETTE.get(summary["optimizer"], "#334155")
-        alpha = 0.98 if summary is summaries[0] else 0.72
-        width = 1.85 if summary is summaries[0] else 1.25
-        steps = [row["step"] for row in summary["rows"]]
-        vals = [row["val_loss"] for row in summary["rows"]]
-        ax.plot(steps, vals, color=color, linewidth=width, alpha=alpha, label=summary["label"], solid_capstyle="round")
+    for axis in (ax, ax_zoom):
+        axis.set_facecolor("white")
+        for spine in axis.spines.values():
+            spine.set_color("#222222")
+            spine.set_linewidth(0.8)
+        axis.grid(axis="y", color="#d7d7d7", linewidth=0.55)
+        axis.tick_params(colors="#222222", labelsize=8, width=0.6, length=3)
+        axis.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k" if x else "0"))
+        axis.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.2f"))
+        axis.set_xlabel("step", fontsize=8, color="#222222", labelpad=6)
+    ax.set_ylabel("validation loss", fontsize=8, color="#222222", labelpad=6)
 
-    zoom_start = int(max_step * 0.62)
-    inset = ax.inset_axes([0.64, 0.43, 0.32, 0.34])
-    inset.set_facecolor("#ffffff")
-    for spine in inset.spines.values():
-        spine.set_color("#e5e7eb")
-        spine.set_linewidth(0.8)
-    inset.grid(axis="y", color="#edf1f5", linewidth=0.55)
-    inset.grid(axis="x", color="#f5f7fa", linewidth=0.45)
-    inset.tick_params(colors="#a3acba", labelsize=6, length=2)
-    inset.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k"))
-    inset.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.2f"))
-    inset.set_xlim(zoom_start, max_step)
+    ax.set_xlim(0, max_step)
+    ax.set_ylim(max(0.0, ymin - span * 0.04), ymax + span * 0.03)
+    zoom_start = int(max_step * 0.78)
+    ax_zoom.set_xlim(zoom_start, max_step)
 
     zoom_vals = []
-    for summary in show_order:
-        rows = [row for row in summary["rows"] if row["step"] >= zoom_start]
-        steps = [row["step"] for row in rows]
-        vals = [row["val_loss"] for row in rows]
-        zoom_vals.extend(vals)
+    for idx, summary in enumerate(show_order):
         color = PALETTE.get(summary["optimizer"], "#334155")
-        width = 1.5 if summary is summaries[0] else 1.0
-        inset.plot(steps, vals, color=color, linewidth=width, alpha=0.92, solid_capstyle="round")
+        steps = [row["step"] for row in summary["rows"]]
+        vals = [row["val_loss"] for row in summary["rows"]]
+        ax.plot(
+            steps,
+            vals,
+            color=color,
+            linewidth=1.65 if idx == 0 else 1.2,
+            alpha=1.0 if idx == 0 else 0.82,
+            solid_capstyle="round",
+        )
+
+        zoom_rows = [row for row in summary["rows"] if row["step"] >= zoom_start]
+        z_steps = [row["step"] for row in zoom_rows]
+        z_vals = [row["val_loss"] for row in zoom_rows]
+        zoom_vals.extend(z_vals)
+        ax_zoom.plot(
+            z_steps,
+            z_vals,
+            color=color,
+            linewidth=1.65 if idx == 0 else 1.2,
+            alpha=1.0 if idx == 0 else 0.82,
+            solid_capstyle="round",
+        )
 
     if zoom_vals:
         zmin = min(zoom_vals)
         zmax = max(zoom_vals)
         zspan = max(zmax - zmin, 1e-6)
-        inset.set_ylim(zmin - zspan * 0.12, zmax + zspan * 0.18)
-    ax.indicate_inset_zoom(inset, edgecolor="#e5e7eb", linewidth=0.9, alpha=0.9)
+        ax_zoom.set_ylim(zmin - zspan * 0.12, zmax + zspan * 0.12)
 
-    legend = ax.legend(
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.12),
-        ncol=min(4, len(show_order)),
+    ax.text(0.01, 1.03, "(a) full trajectory", transform=ax.transAxes, fontsize=8, color="#222222", va="bottom")
+    ax_zoom.text(0.01, 1.03, "(b) late-run detail", transform=ax_zoom.transAxes, fontsize=8, color="#222222", va="bottom")
+
+    legend = ax_zoom.legend(
+        [summary["label"] for summary in show_order],
+        loc="lower left",
         frameon=False,
-        fontsize=8,
-        handlelength=1.8,
-        columnspacing=1.6,
+        fontsize=7,
+        handlelength=2.2,
+        borderaxespad=0.2,
     )
     for text in legend.get_texts():
-        text.set_color("#4b5563")
+        text.set_color("#222222")
 
-    fig.text(0.075, 0.935, "TinyShakespeare validation loss", color="#111827", fontsize=16, fontweight="bold")
+    leader = show_order[0]
+    fig.text(0.065, 0.97, "Figure 1. TinyShakespeare validation-loss comparison across optimizers", fontsize=10.5, color="#111111")
     fig.text(
-        0.075,
-        0.905,
-        f"{fmt_step(max_step)} steps · {len(summaries)} optimizers · inset shows the late-run spread",
-        color="#8b95a7",
-        fontsize=8.5,
+        0.065,
+        0.942,
+        f"Same initialization, split, and seed. Best run: {leader['label']} with minimum validation loss {leader['best_val']:.3f}.",
+        fontsize=8,
+        color="#333333",
     )
     fig.text(
-        0.73,
-        0.905,
-        f"best: {summaries[0]['label']} {summaries[0]['best_val']:.3f}",
-        color=PALETTE.get(summaries[0]["optimizer"], "#111827"),
-        fontsize=9,
-        fontweight="bold",
+        0.065,
+        0.02,
+        "Curves are evaluated at the logged validation checkpoints. Panel (b) zooms into the final 22% of training to expose the late-run spread.",
+        fontsize=7.6,
+        color="#333333",
     )
-
-    fig.subplots_adjust(left=0.075, right=0.98, top=0.86, bottom=0.20)
+    fig.subplots_adjust(left=0.065, right=0.99, top=0.86, bottom=0.15)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
     plt.close(fig)
@@ -1251,21 +693,87 @@ def has_metric(summaries, key):
     return any(math.isfinite(row.get(key, float("nan"))) for summary in summaries for row in summary["rows"])
 
 
+def style_report_axis(ax, *, x_label=None, y_label=None):
+    ax.set_facecolor(SURFACE["panel"])
+    for spine in ax.spines.values():
+        spine.set_color(SURFACE["border"])
+        spine.set_linewidth(1.0)
+    ax.grid(axis="y", color=SURFACE["grid"], linewidth=0.8)
+    ax.grid(axis="x", color=SURFACE["grid"], linewidth=0.5, alpha=0.4)
+    ax.tick_params(colors=SURFACE["muted"], labelsize=8, length=0)
+    if x_label:
+        ax.set_xlabel(x_label, color=SURFACE["muted"], fontsize=8, labelpad=10)
+    if y_label:
+        ax.set_ylabel(y_label, color=SURFACE["muted"], fontsize=8, labelpad=10)
+
+
+def add_panel_title(ax, title, subtitle):
+    ax.text(0.0, 1.10, title, transform=ax.transAxes, color=SURFACE["text"], fontsize=11, fontweight="bold", va="bottom")
+    ax.text(0.0, 1.04, subtitle, transform=ax.transAxes, color=SURFACE["muted"], fontsize=7.8, va="bottom")
+
+
+def add_direct_labels(ax, summaries, value_key="val_loss"):
+    ordered = sorted(
+        summaries,
+        key=lambda item: item["rows"][-1].get(value_key, float("inf")) if math.isfinite(item["rows"][-1].get(value_key, float("nan"))) else float("inf"),
+    )
+    y_positions = []
+    for summary in ordered:
+        y = summary["rows"][-1][value_key]
+        if not math.isfinite(y):
+            continue
+        y_positions.append(y)
+
+    if not y_positions:
+        return
+
+    span = max(y_positions) - min(y_positions)
+    min_gap = max(span * 0.045, 0.012)
+    adjusted = []
+    for y in y_positions:
+        adjusted.append(y if not adjusted else max(y, adjusted[-1] + min_gap))
+
+    for idx in range(len(adjusted) - 2, -1, -1):
+        adjusted[idx] = min(adjusted[idx], adjusted[idx + 1] - min_gap)
+
+    label_x = ax.get_xlim()[1] * 1.01
+    end_x = ax.get_xlim()[1]
+    for summary, label_y in zip(ordered, adjusted):
+        final_y = summary["rows"][-1][value_key]
+        if not math.isfinite(final_y):
+            continue
+        color = PALETTE.get(summary["optimizer"], "#334155")
+        ax.plot([end_x, label_x], [final_y, label_y], color=color, linewidth=0.9, alpha=0.65, clip_on=False)
+        ax.text(
+            label_x * 1.002,
+            label_y,
+            f"{summary['label']}  {final_y:.3f}",
+            color=color,
+            fontsize=7.5,
+            va="center",
+            ha="left",
+            clip_on=False,
+        )
+
+
 def render_metric_png(args, summaries, out_path, keys, title, ylabel):
     if not any(has_metric(summaries, key) for key in keys):
         return False
 
     max_step = max(summary["rows"][-1]["step"] for summary in summaries)
-    fig, ax = plt.subplots(figsize=(10.2, 4.8), dpi=180, facecolor="#ffffff")
-    ax.set_facecolor("#ffffff")
+    plt.rcParams.update({
+        "font.family": "serif",
+        "font.serif": ["DejaVu Serif", "Times New Roman", "Times"],
+    })
+    fig, ax = plt.subplots(figsize=(7.2, 3.2), dpi=220, facecolor="white")
+    ax.set_facecolor("white")
     for spine in ax.spines.values():
-        spine.set_color("#e5e7eb")
-        spine.set_linewidth(1.0)
-    ax.grid(axis="y", color="#edf1f5", linewidth=0.75)
-    ax.grid(axis="x", color="#f5f7fa", linewidth=0.55)
-    ax.tick_params(colors="#a3acba", labelsize=8)
-    ax.set_xlabel("Training step", color="#8b95a7", fontsize=8, labelpad=10)
-    ax.set_ylabel(ylabel, color="#8b95a7", fontsize=8, labelpad=10)
+        spine.set_color("#222222")
+        spine.set_linewidth(0.8)
+    ax.grid(axis="y", color="#d7d7d7", linewidth=0.55)
+    ax.tick_params(colors="#222222", labelsize=8, width=0.6, length=3)
+    ax.set_xlabel("step", color="#222222", fontsize=8, labelpad=6)
+    ax.set_ylabel(ylabel, color="#222222", fontsize=8, labelpad=6)
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k" if x else "0k"))
     ax.set_xlim(0, max_step)
 
@@ -1287,15 +795,15 @@ def render_metric_png(args, summaries, out_path, keys, title, ylabel):
             ys = [row[key] for row in rows]
             label = f"{summary['label']} {labels.get(key, key)}" if len(keys) > 1 else summary["label"]
             linestyle = ["-", "--", ":"][line_idx % 3] if len(keys) > 1 else "-"
-            ax.plot(xs, ys, color=base_color, linewidth=1.5, alpha=0.9, linestyle=linestyle, label=label)
+            ax.plot(xs, ys, color=base_color, linewidth=1.25, alpha=0.95, linestyle=linestyle, label=label)
             line_idx += 1
 
-    legend = ax.legend(loc="best", frameon=False, fontsize=8)
+    legend = ax.legend(loc="best", frameon=False, fontsize=7, handlelength=2.2)
     for text in legend.get_texts():
-        text.set_color("#4b5563")
+        text.set_color("#222222")
 
-    fig.text(0.075, 0.925, title, color="#111827", fontsize=14, fontweight="bold")
-    fig.subplots_adjust(left=0.075, right=0.98, top=0.84, bottom=0.18)
+    fig.text(0.09, 0.95, title, color="#111111", fontsize=9.8)
+    fig.subplots_adjust(left=0.09, right=0.985, top=0.84, bottom=0.22)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
     plt.close(fig)
