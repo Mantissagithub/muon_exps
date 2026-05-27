@@ -601,6 +601,7 @@ def render_clean_png(args, summaries):
     ymin = min(all_losses)
     ymax = max(all_losses)
     span = max(ymax - ymin, 1e-6)
+    title = "TinyShakespeare (char LM)"
     plt.rcParams.update({
         "font.family": "serif",
         "font.serif": ["DejaVu Serif", "Times New Roman", "Times"],
@@ -630,10 +631,10 @@ def render_clean_png(args, summaries):
         axis.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k" if x else "0"))
         axis.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
         axis.set_xlabel("Step", fontsize=9, color="#222222")
-        axis.set_ylabel("Validation Perplexity", fontsize=9, color="#222222")
+        axis.set_ylabel("Validation Loss", fontsize=9, color="#222222")
 
-    ax_all.set_title("FineWeb (Llama 124M)", fontsize=12, pad=6)
-    ax_focus.set_title("FineWeb (Llama 124M)", fontsize=12, pad=6)
+    ax_all.set_title(title, fontsize=12, pad=6)
+    ax_focus.set_title(title, fontsize=12, pad=6)
     ax_all.set_xlim(0, max_step)
     ax_all.set_ylim(max(0.0, ymin - span * 0.04), ymax + span * 0.03)
 
