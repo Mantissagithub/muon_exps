@@ -1,5 +1,6 @@
 import argparse
 import csv
+import importlib
 import random
 import sys
 import time
@@ -13,7 +14,7 @@ if str(ROOT) not in sys.path:
 
 from experiments.char_lm.dataset import CharDataset, load_tinyshakespeare
 from experiments.char_lm.model import TinyCharTransformer
-from optimizers import AMUSEMuon, Aurora, MuonLike, NorMuon, RiemannAurora, UNorMuon
+from optimizers import AMUSEMuon, Aurora, MuonLike, NorMuon, RiemannAurora, ScheduleFreeAdamW, UNorMuon
 
 
 OPTIMIZERS = [
@@ -24,9 +25,18 @@ OPTIMIZERS = [
     "u_normuon",
     "aurora",
     "riemann_aurora",
+    "adafactor",
+    "sf_adamw",
     "amuse_muon",
     "sf_muon_fixed_beta_0.6",
     "sf_muon_fixed_beta_0.9",
+    "lion",
+    "adopt",
+    "prodigy",
+    "soap",
+    "mars",
+    "sophia",
+    "ademamix",
 ]
 
 
@@ -79,6 +89,10 @@ def make_optimizers(name: str, model: torch.nn.Module, lr: float, weight_decay: 
     matrix_params, other_params = split_params(model)
     if name == "adamw":
         return [torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)]
+    if name == "adafactor":
+        if not hasattr(torch.optim, "Adafactor"):
+            raise RuntimeError("this torch build does not expose torch.optim.Adafactor")
+        return [torch.optim.Adafactor(model.parameters(), lr=lr, weight_decay=weight_decay)]
 
     other_opt = torch.optim.AdamW(other_params, lr=lr, weight_decay=weight_decay) if other_params else None
     if name == "torch_muon":
@@ -95,13 +109,45 @@ def make_optimizers(name: str, model: torch.nn.Module, lr: float, weight_decay: 
         matrix_opt = Aurora(matrix_params, lr=lr, weight_decay=weight_decay)
     elif name == "riemann_aurora":
         matrix_opt = RiemannAurora(matrix_params, lr=lr, weight_decay=weight_decay)
+    elif name in {"lion", "adopt", "prodigy", "soap", "mars", "sophia", "ademamix"}:
+        return [make_optional_optimizer(name, model, lr, weight_decay)]
     else:
         raise ValueError(f"unknown optimizer: {name}")
     return [opt for opt in [matrix_opt, other_opt] if opt is not None]
 
 
+def make_optional_optimizer(name: str, model: torch.nn.Module, lr: float, weight_decay: float):
+    specs = {
+        "lion": ("lion_pytorch", "Lion"),
+        "adopt": ("adopt", "ADOPT"),
+        "prodigy": ("prodigyopt", "Prodigy"),
+        "soap": ("soap", "SOAP"),
+        "mars": ("mars", "MARS"),
+        "sophia": ("sophia", "Sophia"),
+        "ademamix": ("ademamix", "AdEMAMix"),
+    }
+    module_name, class_name = specs[name]
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(f"{name} requested but module '{module_name}' is not installed in .venv") from exc
+    opt_cls = getattr(module, class_name)
+    return opt_cls(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+
 def make_optimizer_stack(name: str, model: torch.nn.Module, args):
     matrix_params, other_params = split_params(model)
+    if name == "sf_adamw":
+        return [
+            ScheduleFreeAdamW(
+                model.parameters(),
+                lr=args.lr,
+                weight_decay=args.weight_decay,
+                sf_beta1=args.amuse_beta1,
+                rho=args.amuse_rho,
+                warmup_steps=args.warmup_steps,
+            )
+        ]
     if name == "amuse_muon":
         return [
             AMUSEMuon(
@@ -145,7 +191,7 @@ def make_optimizer_stack(name: str, model: torch.nn.Module, args):
 
 def find_amuse(optimizers):
     for opt in optimizers:
-        if isinstance(opt, AMUSEMuon):
+        if isinstance(opt, (AMUSEMuon, ScheduleFreeAdamW)):
             return opt
     return None
 
@@ -296,6 +342,25 @@ def main():
     if "torch_muon" in requested and not hasattr(torch.optim, "Muon"):
         print("skipping torch_muon: this torch build does not expose torch.optim.Muon")
         requested = [name for name in requested if name != "torch_muon"]
+    if "adafactor" in requested and not hasattr(torch.optim, "Adafactor"):
+        print("skipping adafactor: this torch build does not expose torch.optim.Adafactor")
+        requested = [name for name in requested if name != "adafactor"]
+    optional_modules = {
+        "lion": "lion_pytorch",
+        "adopt": "adopt",
+        "prodigy": "prodigyopt",
+        "soap": "soap",
+        "mars": "mars",
+        "sophia": "sophia",
+        "ademamix": "ademamix",
+    }
+    for name, module_name in optional_modules.items():
+        if name in requested:
+            try:
+                importlib.import_module(module_name)
+            except ModuleNotFoundError:
+                print(f"skipping {name}: module '{module_name}' is not installed in .venv")
+                requested = [opt_name for opt_name in requested if opt_name != name]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     text = load_tinyshakespeare(args.dataset)

@@ -23,15 +23,24 @@ COSINE_OUT = ROOT / "artifacts" / "char_lm" / "update_cosine.png"
 
 DISPLAY_NAMES = {
     "adamw": "AdamW",
-    "torch_muon": "Torch Muon",
+    "torch_muon": "Muon",
     "muon_like": "MuonLike",
     "normuon": "NorMuon",
     "u_normuon": "U-NorMuon",
     "aurora": "Aurora",
     "riemann_aurora": "Riemann Aurora",
+    "adafactor": "Adafactor",
+    "sf_adamw": "SF-AdamW",
     "amuse_muon": "AMUSE-Muon",
     "sf_muon_fixed_beta_0.6": "SF-Muon beta=0.6",
     "sf_muon_fixed_beta_0.9": "SF-Muon beta=0.9",
+    "lion": "Lion",
+    "adopt": "ADOPT",
+    "prodigy": "Prodigy",
+    "soap": "SOAP",
+    "mars": "MARS",
+    "sophia": "Sophia",
+    "ademamix": "AdEMAMix",
 }
 
 PALETTE = {
@@ -42,19 +51,18 @@ PALETTE = {
     "u_normuon": "#c2410c",
     "aurora": "#7c3aed",
     "riemann_aurora": "#9333ea",
+    "adafactor": "#6b7280",
+    "sf_adamw": "#16a34a",
     "amuse_muon": "#0f9d7a",
     "sf_muon_fixed_beta_0.6": "#84a11d",
     "sf_muon_fixed_beta_0.9": "#b45309",
-}
-
-SURFACE = {
-    "page": "#f5f1e8",
-    "panel": "#fcfaf6",
-    "panel_alt": "#f3ede2",
-    "grid": "#ddd4c5",
-    "border": "#d3c8b6",
-    "text": "#201a14",
-    "muted": "#6d6457",
+    "lion": "#ca8a04",
+    "adopt": "#b91c1c",
+    "prodigy": "#0891b2",
+    "soap": "#111827",
+    "mars": "#a855f7",
+    "sophia": "#4f46e5",
+    "ademamix": "#9333ea",
 }
 
 
@@ -597,93 +605,83 @@ def render_clean_png(args, summaries):
         "font.family": "serif",
         "font.serif": ["DejaVu Serif", "Times New Roman", "Times"],
     })
-    fig = plt.figure(figsize=(11.6, 4.9), dpi=220, facecolor="white")
-    grid = GridSpec(1, 2, figure=fig, width_ratios=[1.85, 1.0], wspace=0.18)
-    ax = fig.add_subplot(grid[0, 0])
-    ax_zoom = fig.add_subplot(grid[0, 1])
+    fig = plt.figure(figsize=(12.4, 4.2), dpi=220, facecolor="white")
+    grid = GridSpec(1, 2, figure=fig, width_ratios=[1.0, 1.0], wspace=0.22)
+    ax_all = fig.add_subplot(grid[0, 0])
+    ax_focus = fig.add_subplot(grid[0, 1])
 
-    show_order = sorted(summaries, key=lambda item: item["best_val"])
-    for axis in (ax, ax_zoom):
+    ordered = sorted(summaries, key=lambda item: item["best_val"])
+    available = {summary["optimizer"]: summary for summary in ordered}
+    focus_keys = []
+    for name in ["adamw", "torch_muon", "muon_like", "sf_adamw", "amuse_muon"]:
+        if name == "muon_like" and "torch_muon" in available:
+            continue
+        if name in available:
+            focus_keys.append(name)
+    focus = [available[name] for name in focus_keys] if focus_keys else ordered[: min(4, len(ordered))]
+
+    for axis in (ax_all, ax_focus):
         axis.set_facecolor("white")
         for spine in axis.spines.values():
-            spine.set_color("#222222")
+            spine.set_color("#666666")
             spine.set_linewidth(0.8)
-        axis.grid(axis="y", color="#d7d7d7", linewidth=0.55)
+        axis.grid(True, color="#b0b0b0", linewidth=0.6, alpha=0.6)
         axis.tick_params(colors="#222222", labelsize=8, width=0.6, length=3)
         axis.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k" if x else "0"))
-        axis.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.2f"))
-        axis.set_xlabel("step", fontsize=8, color="#222222", labelpad=6)
-    ax.set_ylabel("validation loss", fontsize=8, color="#222222", labelpad=6)
+        axis.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
+        axis.set_xlabel("Step", fontsize=9, color="#222222")
+        axis.set_ylabel("Validation Perplexity", fontsize=9, color="#222222")
 
-    ax.set_xlim(0, max_step)
-    ax.set_ylim(max(0.0, ymin - span * 0.04), ymax + span * 0.03)
-    zoom_start = int(max_step * 0.78)
-    ax_zoom.set_xlim(zoom_start, max_step)
+    ax_all.set_title("FineWeb (Llama 124M)", fontsize=12, pad=6)
+    ax_focus.set_title("FineWeb (Llama 124M)", fontsize=12, pad=6)
+    ax_all.set_xlim(0, max_step)
+    ax_all.set_ylim(max(0.0, ymin - span * 0.04), ymax + span * 0.03)
 
-    zoom_vals = []
-    for idx, summary in enumerate(show_order):
-        color = PALETTE.get(summary["optimizer"], "#334155")
+    focus_steps = []
+    focus_vals = []
+    for summary in ordered:
         steps = [row["step"] for row in summary["rows"]]
         vals = [row["val_loss"] for row in summary["rows"]]
-        ax.plot(
+        ax_all.plot(
             steps,
             vals,
-            color=color,
-            linewidth=1.65 if idx == 0 else 1.2,
-            alpha=1.0 if idx == 0 else 0.82,
-            solid_capstyle="round",
+            color=PALETTE.get(summary["optimizer"], "#334155"),
+            linewidth=1.15,
+            alpha=0.95,
+            label=summary["label"],
         )
 
-        zoom_rows = [row for row in summary["rows"] if row["step"] >= zoom_start]
-        z_steps = [row["step"] for row in zoom_rows]
-        z_vals = [row["val_loss"] for row in zoom_rows]
-        zoom_vals.extend(z_vals)
-        ax_zoom.plot(
-            z_steps,
-            z_vals,
-            color=color,
-            linewidth=1.65 if idx == 0 else 1.2,
-            alpha=1.0 if idx == 0 else 0.82,
-            solid_capstyle="round",
+    for summary in focus:
+        steps = [row["step"] for row in summary["rows"]]
+        vals = [row["val_loss"] for row in summary["rows"]]
+        focus_steps.extend(steps)
+        focus_vals.extend(vals)
+        ax_focus.plot(
+            steps,
+            vals,
+            color=PALETTE.get(summary["optimizer"], "#334155"),
+            linewidth=1.2,
+            alpha=0.95,
+            label=summary["label"],
         )
 
-    if zoom_vals:
-        zmin = min(zoom_vals)
-        zmax = max(zoom_vals)
-        zspan = max(zmax - zmin, 1e-6)
-        ax_zoom.set_ylim(zmin - zspan * 0.12, zmax + zspan * 0.12)
+    if focus_steps and focus_vals:
+        ax_focus.set_xlim(min(focus_steps), max(focus_steps) * 1.02)
+        fmin = min(focus_vals)
+        fmax = max(focus_vals)
+        fspan = max(fmax - fmin, 1e-6)
+        ax_focus.set_ylim(fmin - fspan * 0.04, fmax + fspan * 0.04)
 
-    ax.text(0.01, 1.03, "(a) full trajectory", transform=ax.transAxes, fontsize=8, color="#222222", va="bottom")
-    ax_zoom.text(0.01, 1.03, "(b) late-run detail", transform=ax_zoom.transAxes, fontsize=8, color="#222222", va="bottom")
+    legend_all = ax_all.legend(loc="upper right", frameon=True, fontsize=7, ncol=2)
+    legend_all.get_frame().set_edgecolor("#cccccc")
+    legend_all.get_frame().set_facecolor("white")
+    legend_all.get_frame().set_alpha(0.95)
+    legend_focus = ax_focus.legend(loc="upper right", frameon=True, fontsize=7)
+    legend_focus.get_frame().set_edgecolor("#cccccc")
+    legend_focus.get_frame().set_facecolor("white")
+    legend_focus.get_frame().set_alpha(0.95)
 
-    legend = ax_zoom.legend(
-        [summary["label"] for summary in show_order],
-        loc="lower left",
-        frameon=False,
-        fontsize=7,
-        handlelength=2.2,
-        borderaxespad=0.2,
-    )
-    for text in legend.get_texts():
-        text.set_color("#222222")
-
-    leader = show_order[0]
-    fig.text(0.065, 0.97, "Figure 1. TinyShakespeare validation-loss comparison across optimizers", fontsize=10.5, color="#111111")
-    fig.text(
-        0.065,
-        0.942,
-        f"Same initialization, split, and seed. Best run: {leader['label']} with minimum validation loss {leader['best_val']:.3f}.",
-        fontsize=8,
-        color="#333333",
-    )
-    fig.text(
-        0.065,
-        0.02,
-        "Curves are evaluated at the logged validation checkpoints. Panel (b) zooms into the final 22% of training to expose the late-run spread.",
-        fontsize=7.6,
-        color="#333333",
-    )
-    fig.subplots_adjust(left=0.065, right=0.99, top=0.86, bottom=0.15)
+    fig.subplots_adjust(left=0.07, right=0.985, top=0.88, bottom=0.16)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
     plt.close(fig)
@@ -691,69 +689,6 @@ def render_clean_png(args, summaries):
 
 def has_metric(summaries, key):
     return any(math.isfinite(row.get(key, float("nan"))) for summary in summaries for row in summary["rows"])
-
-
-def style_report_axis(ax, *, x_label=None, y_label=None):
-    ax.set_facecolor(SURFACE["panel"])
-    for spine in ax.spines.values():
-        spine.set_color(SURFACE["border"])
-        spine.set_linewidth(1.0)
-    ax.grid(axis="y", color=SURFACE["grid"], linewidth=0.8)
-    ax.grid(axis="x", color=SURFACE["grid"], linewidth=0.5, alpha=0.4)
-    ax.tick_params(colors=SURFACE["muted"], labelsize=8, length=0)
-    if x_label:
-        ax.set_xlabel(x_label, color=SURFACE["muted"], fontsize=8, labelpad=10)
-    if y_label:
-        ax.set_ylabel(y_label, color=SURFACE["muted"], fontsize=8, labelpad=10)
-
-
-def add_panel_title(ax, title, subtitle):
-    ax.text(0.0, 1.10, title, transform=ax.transAxes, color=SURFACE["text"], fontsize=11, fontweight="bold", va="bottom")
-    ax.text(0.0, 1.04, subtitle, transform=ax.transAxes, color=SURFACE["muted"], fontsize=7.8, va="bottom")
-
-
-def add_direct_labels(ax, summaries, value_key="val_loss"):
-    ordered = sorted(
-        summaries,
-        key=lambda item: item["rows"][-1].get(value_key, float("inf")) if math.isfinite(item["rows"][-1].get(value_key, float("nan"))) else float("inf"),
-    )
-    y_positions = []
-    for summary in ordered:
-        y = summary["rows"][-1][value_key]
-        if not math.isfinite(y):
-            continue
-        y_positions.append(y)
-
-    if not y_positions:
-        return
-
-    span = max(y_positions) - min(y_positions)
-    min_gap = max(span * 0.045, 0.012)
-    adjusted = []
-    for y in y_positions:
-        adjusted.append(y if not adjusted else max(y, adjusted[-1] + min_gap))
-
-    for idx in range(len(adjusted) - 2, -1, -1):
-        adjusted[idx] = min(adjusted[idx], adjusted[idx + 1] - min_gap)
-
-    label_x = ax.get_xlim()[1] * 1.01
-    end_x = ax.get_xlim()[1]
-    for summary, label_y in zip(ordered, adjusted):
-        final_y = summary["rows"][-1][value_key]
-        if not math.isfinite(final_y):
-            continue
-        color = PALETTE.get(summary["optimizer"], "#334155")
-        ax.plot([end_x, label_x], [final_y, label_y], color=color, linewidth=0.9, alpha=0.65, clip_on=False)
-        ax.text(
-            label_x * 1.002,
-            label_y,
-            f"{summary['label']}  {final_y:.3f}",
-            color=color,
-            fontsize=7.5,
-            va="center",
-            ha="left",
-            clip_on=False,
-        )
 
 
 def render_metric_png(args, summaries, out_path, keys, title, ylabel):

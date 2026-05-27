@@ -372,3 +372,125 @@ class AMUSEMuon:
             "y_x_distance": math.sqrt(yx_num) / max(math.sqrt(yx_den), 1e-12),
             "y_z_distance": math.sqrt(yz_num) / max(math.sqrt(yz_den), 1e-12),
         }
+
+
+class ScheduleFreeAdamW:
+    """Schedule-free AdamW baseline with explicit z/x state."""
+
+    def __init__(
+        self,
+        params,
+        lr=1e-3,
+        weight_decay=0.1,
+        beta1=0.9,
+        beta2=0.95,
+        eps=1e-8,
+        sf_beta1=0.6,
+        rho=0.8,
+        warmup_steps=100,
+        fixed_beta=None,
+    ):
+        self.params = list(params)
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.eps = eps
+        self.sf_beta1 = sf_beta1
+        self.rho = rho
+        self.warmup_steps = max(1, int(warmup_steps))
+        self.fixed_beta = fixed_beta
+        self.step_idx = 0
+        self.last_beta = self.beta_t(0)
+
+        self.state = {}
+        for p in self.params:
+            self.state[p] = {
+                "z": p.detach().clone(),
+                "x": p.detach().clone(),
+                "exp_avg": torch.zeros_like(p),
+                "exp_avg_sq": torch.zeros_like(p),
+            }
+
+    def zero_grad(self, set_to_none=True):
+        for p in self.params:
+            p.grad = None if set_to_none else torch.zeros_like(p)
+
+    def beta_t(self, step_idx):
+        if self.fixed_beta is not None:
+            return float(self.fixed_beta)
+        t = step_idx + 1
+        if t <= self.warmup_steps:
+            return float(self.sf_beta1)
+        beta = 1.0 - ((self.warmup_steps - 1.0) / max(t - 1.0, 1.0)) ** self.rho * (1.0 - self.sf_beta1)
+        return float(min(max(beta, self.sf_beta1), 1.0))
+
+    @torch.no_grad()
+    def prepare_train_step(self):
+        beta = self.beta_t(self.step_idx)
+        self.last_beta = beta
+        for p in self.params:
+            state = self.state[p]
+            p.copy_(state["z"])
+            p.lerp_(state["x"], beta)
+
+    @torch.no_grad()
+    def use_x_params(self):
+        for p in self.params:
+            p.copy_(self.state[p]["x"])
+
+    @torch.no_grad()
+    def use_z_params(self):
+        for p in self.params:
+            p.copy_(self.state[p]["z"])
+
+    @torch.no_grad()
+    def step(self):
+        for p in self.params:
+            if p.grad is None:
+                continue
+            state = self.state[p]
+            z = state["z"]
+            grad = p.grad
+            exp_avg = state["exp_avg"]
+            exp_avg_sq = state["exp_avg_sq"]
+
+            z.mul_(1.0 - self.lr * self.weight_decay)
+            exp_avg.mul_(self.beta1).add_(grad, alpha=1.0 - self.beta1)
+            exp_avg_sq.mul_(self.beta2).addcmul_(grad, grad, value=1.0 - self.beta2)
+
+            t = self.step_idx + 1
+            bias_correction1 = 1.0 - self.beta1**t
+            bias_correction2 = 1.0 - self.beta2**t
+            step_size = self.lr / bias_correction1
+            denom = exp_avg_sq.sqrt().div_(math.sqrt(bias_correction2)).add_(self.eps)
+            z.addcdiv_(exp_avg, denom, value=-step_size)
+
+            c = 1.0 / (self.step_idx + 1.0)
+            state["x"].lerp_(z, c)
+
+        self.step_idx += 1
+        self.prepare_train_step()
+
+    @torch.no_grad()
+    def metrics(self):
+        zx_num = zx_den = yx_num = yx_den = yz_num = yz_den = 0.0
+        beta = self.last_beta
+        for p in self.params:
+            state = self.state[p]
+            z = state["z"].to(torch.float32)
+            x = state["x"].to(torch.float32)
+            y = torch.lerp(z, x, beta)
+            zx_num += torch.sum((z - x).pow(2)).item()
+            zx_den += torch.sum(x.pow(2)).item()
+            yx_num += torch.sum((y - x).pow(2)).item()
+            yx_den += torch.sum(x.pow(2)).item()
+            yz_num += torch.sum((y - z).pow(2)).item()
+            yz_den += torch.sum(z.pow(2)).item()
+        return {
+            "beta_t": beta,
+            "update_cosine_similarity": float("nan"),
+            "z_x_distance": math.sqrt(zx_num) / max(math.sqrt(zx_den), 1e-12),
+            "y_x_distance": math.sqrt(yx_num) / max(math.sqrt(yx_den), 1e-12),
+            "y_z_distance": math.sqrt(yz_num) / max(math.sqrt(yz_den), 1e-12),
+        }
