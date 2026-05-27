@@ -1,8 +1,12 @@
-// row-normalized muon variant. assumes muon.cu was already #include'd
-// so CUDA_CHECK / CUBLAS_CHECK / mom_update / newton_schulz_launch /
-// muon_update_kernel are already in scope.
+// u-normuon variant. standalone entry that pulls in the base muon primitives.
 
-__global__ void row_sq_mean_kernel(
+#include <cmath>
+#include <cuda_runtime.h>
+#include <cuda_fp16.h>
+#include <cublas_v2.h>
+#include "muon.cu"
+
+__global__ void u_normuon_row_sq_mean_kernel(
     const float* __restrict__ U,
     float* __restrict__ row_mean_sq,
     int N,
@@ -19,7 +23,7 @@ __global__ void row_sq_mean_kernel(
   row_mean_sq[row] = acc / (float)M;
 }
 
-__global__ void row_ema_update_kernel(
+__global__ void u_normuon_row_ema_update_kernel(
     float* __restrict__ row_ema,
     const float* __restrict__ row_mean_sq,
     int N,
@@ -31,7 +35,7 @@ __global__ void row_ema_update_kernel(
   }
 }
 
-__global__ void apply_row_norm_kernel(
+__global__ void u_normuon_apply_row_norm_kernel(
     float* __restrict__ U,
     const float* __restrict__ row_ema,
     int N,
@@ -47,7 +51,7 @@ __global__ void apply_row_norm_kernel(
   U[idx] /= denom;
 }
 
-void normuon_row_postprocess(
+void u_normuon_row_postprocess(
     float* __restrict__ d_U,
     float* __restrict__ d_row_ema,
     int N,
@@ -62,19 +66,19 @@ void normuon_row_postprocess(
   int row_blocks = (N + threads - 1) / threads;
   int elem_blocks = (N * M + threads - 1) / threads;
 
-  row_sq_mean_kernel<<<row_blocks, threads>>>(d_U, d_row_mean_sq, N, M);
+  u_normuon_row_sq_mean_kernel<<<row_blocks, threads>>>(d_U, d_row_mean_sq, N, M);
   CUDA_CHECK(cudaDeviceSynchronize());
 
-  row_ema_update_kernel<<<row_blocks, threads>>>(d_row_ema, d_row_mean_sq, N, beta2);
+  u_normuon_row_ema_update_kernel<<<row_blocks, threads>>>(d_row_ema, d_row_mean_sq, N, beta2);
   CUDA_CHECK(cudaDeviceSynchronize());
 
-  apply_row_norm_kernel<<<elem_blocks, threads>>>(d_U, d_row_ema, N, M, eps);
+  u_normuon_apply_row_norm_kernel<<<elem_blocks, threads>>>(d_U, d_row_ema, N, M, eps);
   CUDA_CHECK(cudaDeviceSynchronize());
 
   CUDA_CHECK(cudaFree(d_row_mean_sq));
 }
 
-void normuon_step(
+void u_normuon_step(
     float* __restrict__ d_W,
     float* __restrict__ d_G,
     float* __restrict__ d_M,
@@ -99,12 +103,12 @@ void normuon_step(
   newton_schulz_launch(d_M, d_U, N, M, ns_iterations, handle);
   CUDA_CHECK(cudaDeviceSynchronize());
 
-  normuon_row_postprocess(d_U, d_row_ema, N, M, 0.999f, 1e-8f);
+  u_normuon_row_postprocess(d_U, d_row_ema, N, M, 0.999f, 1e-8f);
   CUDA_CHECK(cudaDeviceSynchronize());
 
   float u_norm;
   CUBLAS_CHECK(cublasSnrm2(handle, size, d_U, 1, &u_norm));
-  float lr_hat = 0.2f * lr * u_norm / sqrtf((float)size);
+  float lr_hat = 0.2f * lr * u_norm / sqrtf((float)M);
 
   muon_update_kernel<<<blocks, threads>>>(d_W, d_U, size, lr_hat, weight_decay);
   CUDA_CHECK(cudaDeviceSynchronize());

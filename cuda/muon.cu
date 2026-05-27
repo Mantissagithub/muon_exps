@@ -1,3 +1,6 @@
+#ifndef MUON_CU_INCLUDED
+#define MUON_CU_INCLUDED
+
 // #include <bits/stdc++.h> // got a problem running in a1000
 #include <cstdio>
 #include <cstdlib>
@@ -183,3 +186,5 @@ void muon_step(float* __restrict__ d_W, float* __restrict__ d_G, float* __restri
 
   CUBLAS_CHECK(cublasDestroy(handle));
 }
+
+#endif  // MUON_CU_INCLUDED

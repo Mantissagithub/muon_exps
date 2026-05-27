@@ -17,6 +17,7 @@ just messing around with muon kernels, benchmark variants, and a couple of small
 ## run
 
 - `uv run scripts/benchmark_tui.py`
+- `uv run scripts/optimizer_variants_tui.py`
 - `uv run scripts/pytorch_tui.py`
 - `uv run scripts/pytorch_muon_benchmark.py`
 - `uv run experiments/mnist/mnist_muon.py`
@@ -26,6 +27,7 @@ just messing around with muon kernels, benchmark variants, and a couple of small
 ## notes
 
 - `cuda/benchmark.cu` is the main cuda benchmark driver.
+- `cuda/benchmark_optimizer_variants.cu` compares the optimizer update rules on synthetic anisotropic gradients.
 - `cuda/gns_muon.cu` has the gram newton-schulz experiments.
 - the current benchmark grid is tuned down for a 4060 laptop gpu so it does not take forever.
 - some gram-ns variants are still wip and not numerically stable yet.
@@ -63,3 +65,22 @@ bench run for the table above:
 - `7.62 GiB`
 - `iters 1000`
 - `480.5s total`
+
+optimizer-variant benchmark on anisotropic synthetic gradients:
+
+| shape | optimizer | ms/step | row cv | dead rows | ortho defect | alignment |
+|-------|-----------|--------:|-------:|----------:|-------------:|----------:|
+| 512×128 | muon | 0.410 | 0.496 | 0.195 | 0.385 | 0.913 |
+| 512×128 | aurora | 0.737 | 1.780 | 0.000 | 2.183 | 0.030 |
+| 512×128 | riemann_aurora | 7.594 | 0.025 | 0.000 | 1.368 | 0.866 |
+| 2048×512 | muon | 2.363 | 0.494 | 0.196 | 0.278 | 0.944 |
+| 2048×512 | aurora | 4.818 | 1.900 | 0.000 | 2.544 | 0.016 |
+| 2048×512 | riemann_aurora | 59.591 | 0.064 | 0.000 | 2.082 | 0.898 |
+| 8192×2048 | muon | 110.947 | 0.508 | 0.205 | 0.327 | 0.975 |
+| 8192×2048 | aurora | 229.441 | 1.911 | 0.000 | 2.586 | 0.008 |
+| 8192×2048 | riemann_aurora | 9139.112 | 0.010 | 0.000 | 2.303 | 0.877 |
+| 2048×8192 | muon | 111.715 | 0.467 | 0.000 | 0.536 | 0.996 |
+| 2048×8192 | aurora | 235.177 | 0.396 | 0.000 | 0.535 | 0.987 |
+| 2048×8192 | riemann_aurora | 7106.821 | 0.019 | 0.000 | 0.260 | 0.878 |
+
+full table is in `benchmark_results.csv`. riemann aurora does what it is supposed to do on row uniformity, but it is very expensive in this raw cuda version.
