@@ -870,7 +870,11 @@ def render_gif_report(args, summaries):
     ymin -= yrange * 0.05
     ymax += yrange * 0.08
 
-    fig, ax = plt.subplots(figsize=(10.5, 6.1), facecolor="#fcfaf5")
+    fig = plt.figure(figsize=(12.8, 6.6), facecolor="#fcfaf5")
+    gs = GridSpec(1, 2, figure=fig, width_ratios=[3.6, 1.35], wspace=0.12)
+    ax = fig.add_subplot(gs[0, 0])
+    ax_side = fig.add_subplot(gs[0, 1])
+
     ax.set_facecolor("#fffdf8")
     for spine in ax.spines.values():
         spine.set_color("#d4d4d8")
@@ -884,48 +888,103 @@ def render_gif_report(args, summaries):
     ax.set_xlim(0, max_step)
     ax.set_ylim(ymin, ymax)
 
+    ax_side.set_facecolor("#f7f3ea")
+    for spine in ax_side.spines.values():
+        spine.set_color("#ddd6c8")
+    ax_side.set_xticks([])
+    ax_side.set_yticks([])
+    ax_side.set_xlim(0, 1)
+    ax_side.set_ylim(0, 1)
+
     leader = summaries[0]
-    ax.set_title("TinyShakespeare validation loss", loc="left", fontsize=20, fontweight="bold", color="#111827", pad=14)
+    ax.set_title("TinyShakespeare validation loss", loc="left", fontsize=18, fontweight="bold", color="#111827", pad=16)
     subtitle = ax.text(
         0.0,
-        1.02,
+        1.005,
         f"animated training trajectory · leader: {leader['label']} at {leader['best_val']:.3f}",
         transform=ax.transAxes,
-        fontsize=10.5,
+        fontsize=9.6,
         color="#4b5563",
         va="bottom",
     )
+    ax.text(
+        0.995,
+        1.005,
+        f"{fmt_step(max_step)} steps",
+        transform=ax.transAxes,
+        fontsize=9.6,
+        color="#6b7280",
+        va="bottom",
+        ha="right",
+    )
+
+    ax_side.text(0.08, 0.95, "animated readout", fontsize=10, color="#8b6f47", fontweight="semibold")
+    ax_side.text(0.08, 0.90, leader["label"], fontsize=24, color="#111827", fontweight="bold")
+    side_best = ax_side.text(
+        0.08,
+        0.855,
+        f"best val {leader['best_val']:.3f} at step {fmt_step(leader['best_step'])}",
+        fontsize=10.5,
+        color="#5f5b52",
+    )
+    progress_text = ax_side.text(
+        0.08,
+        0.80,
+        "progress 0%",
+        fontsize=10,
+        color="#6b7280",
+        family="monospace",
+    )
+    progress_bar_bg = plt.Rectangle((0.08, 0.765), 0.84, 0.02, facecolor="#e7e1d5", edgecolor="none")
+    progress_bar = plt.Rectangle((0.08, 0.765), 0.0, 0.02, facecolor="#111827", edgecolor="none")
+    ax_side.add_patch(progress_bar_bg)
+    ax_side.add_patch(progress_bar)
 
     line_artists = {}
     point_artists = {}
-    label_artists = {}
-    for summary in summaries:
+    panel_value_artists = {}
+    panel_delta_artists = {}
+    row_y_positions = [0.66 - i * 0.082 for i in range(len(summaries))]
+
+    for idx, summary in enumerate(summaries):
         color = PALETTE.get(summary["optimizer"], "#334155")
         (line,) = ax.plot([], [], color=color, linewidth=2.6, solid_capstyle="round")
         point = ax.scatter([], [], s=42, color=color, edgecolors="white", linewidths=1.4, zorder=5)
-        label = ax.text(
-            max_step * 0.985,
-            ymax,
+        line_artists[summary["optimizer"]] = line
+        point_artists[summary["optimizer"]] = point
+
+        y = row_y_positions[idx]
+        ax_side.add_patch(plt.Rectangle((0.08, y - 0.012), 0.022, 0.022, facecolor=color, edgecolor="none"))
+        ax_side.text(0.12, y, summary["label"], va="center", fontsize=11, color="#1f2937", fontweight="semibold")
+        panel_value_artists[summary["optimizer"]] = ax_side.text(
+            0.92,
+            y,
+            "....",
+            ha="right",
+            va="center",
+            fontsize=11,
+            color=color,
+            family="monospace",
+            fontweight="semibold",
+        )
+        panel_delta_artists[summary["optimizer"]] = ax_side.text(
+            0.92,
+            y - 0.025,
             "",
             ha="right",
             va="center",
-            fontsize=10,
-            color=color,
-            fontweight="semibold",
-            alpha=0.0,
+            fontsize=8.8,
+            color="#7c7c7c",
+            family="monospace",
         )
-        line_artists[summary["optimizer"]] = line
-        point_artists[summary["optimizer"]] = point
-        label_artists[summary["optimizer"]] = label
 
     total_points = max(len(summary["rows"]) for summary in summaries)
-    hold_frames = 14
+    hold_frames = 16
     total_frames = total_points + hold_frames
 
     def update(frame_idx):
         active_points = min(frame_idx + 1, total_points)
-        reveal_labels = frame_idx >= total_points - 1
-        final_rows = []
+        progress = active_points / max(total_points, 1)
 
         for summary in summaries:
             rows = summary["rows"][:active_points]
@@ -934,32 +993,37 @@ def render_gif_report(args, summaries):
             line_artists[summary["optimizer"]].set_data(xs, ys)
             if rows:
                 point_artists[summary["optimizer"]].set_offsets([[xs[-1], ys[-1]]])
-                final_rows.append((summary, ys[-1]))
+                panel_value_artists[summary["optimizer"]].set_text(f"{ys[-1]:.3f}")
+                panel_delta_artists[summary["optimizer"]].set_text(f"best {summary['best_val']:.3f}")
             else:
                 point_artists[summary["optimizer"]].set_offsets([])
+                panel_value_artists[summary["optimizer"]].set_text("....")
+                panel_delta_artists[summary["optimizer"]].set_text("")
 
-        if reveal_labels and final_rows:
-            final_rows.sort(key=lambda item: item[1])
-            y_targets = spread_positions([item[1] for item in final_rows], max(0.018, yrange * 0.04))
-            for (summary, current_y), target_y in zip(final_rows, y_targets):
-                label = label_artists[summary["optimizer"]]
-                label.set_position((max_step * 0.985, target_y))
-                label.set_text(f"{summary['label']}  {current_y:.3f}")
-                label.set_alpha(1.0)
-        else:
-            for label in label_artists.values():
-                label.set_alpha(0.0)
+        progress_bar.set_width(0.84 * progress)
+        progress_text.set_text(f"progress {progress * 100:5.1f}%")
 
         if frame_idx >= total_points - 1:
             subtitle.set_text(
                 f"animated training trajectory · winner: {leader['label']} · best val {leader['best_val']:.3f}"
             )
+            progress_text.set_text("progress 100.0% · final frame")
+            side_best.set_text(
+                f"best val {leader['best_val']:.3f} at step {fmt_step(leader['best_step'])} · final checkpoint view"
+            )
 
-        artists = list(line_artists.values()) + list(point_artists.values()) + list(label_artists.values()) + [subtitle]
+        artists = (
+            list(line_artists.values())
+            + list(point_artists.values())
+            + list(panel_value_artists.values())
+            + list(panel_delta_artists.values())
+            + [subtitle, side_best, progress_text, progress_bar]
+        )
         return artists
 
     anim = FuncAnimation(fig, update, frames=total_frames, interval=120, blit=False)
     args.gif_out.parent.mkdir(parents=True, exist_ok=True)
+    fig.subplots_adjust(top=0.90, left=0.08, right=0.97, bottom=0.12)
     anim.save(args.gif_out, writer=PillowWriter(fps=10))
     plt.close(fig)
 
