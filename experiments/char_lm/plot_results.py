@@ -870,41 +870,41 @@ def render_gif_report(args, summaries):
     ymin -= yrange * 0.05
     ymax += yrange * 0.08
 
-    fig = plt.figure(figsize=(12.8, 6.6), facecolor="#fcfaf5")
+    fig = plt.figure(figsize=(12.8, 6.6), facecolor="#0b1020")
     gs = GridSpec(1, 2, figure=fig, width_ratios=[3.6, 1.35], wspace=0.12)
     ax = fig.add_subplot(gs[0, 0])
     ax_side = fig.add_subplot(gs[0, 1])
 
-    ax.set_facecolor("#fffdf8")
+    ax.set_facecolor("#121a2b")
     for spine in ax.spines.values():
-        spine.set_color("#d4d4d8")
-    ax.grid(axis="y", color="#e5e7eb", linewidth=1.0)
-    ax.grid(axis="x", color="#f1f5f9", linewidth=0.7)
-    ax.set_xlabel("training step", fontsize=11, color="#374151")
-    ax.set_ylabel("validation loss", fontsize=11, color="#374151")
-    ax.tick_params(colors="#4b5563", labelsize=10)
+        spine.set_color("#334155")
+    ax.grid(axis="y", color="#334155", linewidth=0.9, alpha=0.55)
+    ax.grid(axis="x", color="#1e293b", linewidth=0.7, alpha=0.55)
+    ax.set_xlabel("training step", fontsize=11, color="#cbd5e1")
+    ax.set_ylabel("validation loss", fontsize=11, color="#cbd5e1")
+    ax.tick_params(colors="#94a3b8", labelsize=10)
     ax.xaxis.set_major_formatter(ticker.StrMethodFormatter("{x:,.0f}"))
     ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.3f"))
     ax.set_xlim(0, max_step)
     ax.set_ylim(ymin, ymax)
 
-    ax_side.set_facecolor("#f7f3ea")
+    ax_side.set_facecolor("#111827")
     for spine in ax_side.spines.values():
-        spine.set_color("#ddd6c8")
+        spine.set_color("#374151")
     ax_side.set_xticks([])
     ax_side.set_yticks([])
     ax_side.set_xlim(0, 1)
     ax_side.set_ylim(0, 1)
 
     leader = summaries[0]
-    ax.set_title("TinyShakespeare validation loss", loc="left", fontsize=18, fontweight="bold", color="#111827", pad=16)
+    ax.set_title("TinyShakespeare validation loss", loc="left", fontsize=18, fontweight="bold", color="#f8fafc", pad=16)
     subtitle = ax.text(
         0.0,
         1.005,
         f"animated training trajectory · leader: {leader['label']} at {leader['best_val']:.3f}",
         transform=ax.transAxes,
         fontsize=9.6,
-        color="#4b5563",
+        color="#94a3b8",
         va="bottom",
     )
     ax.text(
@@ -913,30 +913,30 @@ def render_gif_report(args, summaries):
         f"{fmt_step(max_step)} steps",
         transform=ax.transAxes,
         fontsize=9.6,
-        color="#6b7280",
+        color="#94a3b8",
         va="bottom",
         ha="right",
     )
 
-    ax_side.text(0.08, 0.95, "animated readout", fontsize=9.5, color="#8b6f47", fontweight="semibold")
-    ax_side.text(0.08, 0.90, leader["label"], fontsize=24, color="#111827", fontweight="bold")
+    ax_side.text(0.08, 0.91, leader["label"], fontsize=24, color="#f8fafc", fontweight="bold")
     side_best = ax_side.text(
         0.08,
-        0.855,
-        f"best val {leader['best_val']:.3f} at step {fmt_step(leader['best_step'])}",
-        fontsize=10.5,
-        color="#5f5b52",
+        0.83,
+        f"best val {leader['best_val']:.3f}\nat step {fmt_step(leader['best_step'])}",
+        fontsize=10.2,
+        color="#cbd5e1",
+        linespacing=1.35,
     )
     progress_text = ax_side.text(
         0.08,
-        0.80,
+        0.745,
         "progress 0%",
         fontsize=10,
-        color="#6b7280",
+        color="#94a3b8",
         family="monospace",
     )
-    progress_bar_bg = plt.Rectangle((0.08, 0.765), 0.84, 0.02, facecolor="#e7e1d5", edgecolor="none")
-    progress_bar = plt.Rectangle((0.08, 0.765), 0.0, 0.02, facecolor="#111827", edgecolor="none")
+    progress_bar_bg = plt.Rectangle((0.08, 0.712), 0.84, 0.018, facecolor="#1f2937", edgecolor="none")
+    progress_bar = plt.Rectangle((0.08, 0.712), 0.0, 0.018, facecolor="#e2e8f0", edgecolor="none")
     ax_side.add_patch(progress_bar_bg)
     ax_side.add_patch(progress_bar)
 
@@ -944,18 +944,18 @@ def render_gif_report(args, summaries):
     point_artists = {}
     panel_value_artists = {}
     panel_delta_artists = {}
-    row_y_positions = [0.66 - i * 0.094 for i in range(len(summaries))]
+    row_y_positions = [0.61 - i * 0.086 for i in range(len(summaries))]
 
     for idx, summary in enumerate(summaries):
         color = PALETTE.get(summary["optimizer"], "#334155")
-        (line,) = ax.plot([], [], color=color, linewidth=2.6, solid_capstyle="round")
-        point = ax.scatter([], [], s=42, color=color, edgecolors="white", linewidths=1.4, zorder=5)
+        (line,) = ax.plot([], [], color=color, linewidth=1.8, solid_capstyle="round")
+        point = ax.scatter([], [], s=24, color=color, edgecolors="#e2e8f0", linewidths=0.9, zorder=5)
         line_artists[summary["optimizer"]] = line
         point_artists[summary["optimizer"]] = point
 
         y = row_y_positions[idx]
         ax_side.add_patch(plt.Rectangle((0.08, y - 0.012), 0.022, 0.022, facecolor=color, edgecolor="none"))
-        ax_side.text(0.12, y, summary["label"], va="center", fontsize=10.4, color="#1f2937", fontweight="semibold")
+        ax_side.text(0.12, y, summary["label"], va="center", fontsize=10.2, color="#e5e7eb", fontweight="semibold")
         panel_value_artists[summary["optimizer"]] = ax_side.text(
             0.92,
             y,
@@ -974,7 +974,7 @@ def render_gif_report(args, summaries):
             ha="right",
             va="center",
             fontsize=8.0,
-            color="#7c7c7c",
+            color="#94a3b8",
             family="monospace",
         )
 
@@ -1009,7 +1009,7 @@ def render_gif_report(args, summaries):
             )
             progress_text.set_text("progress 100.0% · final frame")
             side_best.set_text(
-                f"best val {leader['best_val']:.3f} at step {fmt_step(leader['best_step'])} · final checkpoint view"
+                f"best val {leader['best_val']:.3f}\nat step {fmt_step(leader['best_step'])}"
             )
 
         artists = (
