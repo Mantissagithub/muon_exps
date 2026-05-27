@@ -70,17 +70,20 @@ optimizer-variant benchmark on anisotropic synthetic gradients:
 
 | shape | optimizer | ms/step | row cv | dead rows | ortho defect | alignment |
 |-------|-----------|--------:|-------:|----------:|-------------:|----------:|
-| 512×128 | muon | 0.410 | 0.496 | 0.195 | 0.385 | 0.913 |
-| 512×128 | aurora | 0.737 | 1.780 | 0.000 | 2.183 | 0.030 |
-| 512×128 | riemann_aurora | 7.594 | 0.025 | 0.000 | 1.368 | 0.866 |
-| 2048×512 | muon | 2.363 | 0.494 | 0.196 | 0.278 | 0.944 |
-| 2048×512 | aurora | 4.818 | 1.900 | 0.000 | 2.544 | 0.016 |
-| 2048×512 | riemann_aurora | 59.591 | 0.064 | 0.000 | 2.082 | 0.898 |
-| 8192×2048 | muon | 110.947 | 0.508 | 0.205 | 0.327 | 0.975 |
-| 8192×2048 | aurora | 229.441 | 1.911 | 0.000 | 2.586 | 0.008 |
-| 8192×2048 | riemann_aurora | 9139.112 | 0.010 | 0.000 | 2.303 | 0.877 |
-| 2048×8192 | muon | 111.715 | 0.467 | 0.000 | 0.536 | 0.996 |
-| 2048×8192 | aurora | 235.177 | 0.396 | 0.000 | 0.535 | 0.987 |
-| 2048×8192 | riemann_aurora | 7106.821 | 0.019 | 0.000 | 0.260 | 0.878 |
+| 512×128 | muon | 0.422 | 0.496 | 0.195 | 0.385 | 0.913 |
+| 512×128 | aurora | 0.784 | 1.780 | 0.000 | 2.183 | 0.030 |
+| 512×128 | riemann_aurora | 7.555 | 0.048 | 0.000 | 1.468 | 0.876 |
+| 1024×256 | muon | 0.815 | 0.533 | 0.221 | 0.293 | 0.936 |
+| 1024×256 | aurora | 1.527 | 1.770 | 0.000 | 2.372 | 0.013 |
+| 1024×256 | riemann_aurora | 18.996 | 0.005 | 0.000 | 3.411 | 0.852 |
+| 2048×512 | muon | 2.379 | 0.494 | 0.196 | 0.278 | 0.944 |
+| 2048×512 | aurora | 4.590 | 1.900 | 0.000 | 2.544 | 0.016 |
+| 2048×512 | riemann_aurora | 59.331 | 0.031 | 0.000 | 2.445 | 0.874 |
+| 1024×1024 | muon | 4.720 | 0.107 | 0.000 | 0.419 | 0.825 |
+| 1024×1024 | aurora | 5.361 | 0.500 | 0.011 | 0.530 | 0.884 |
+| 1024×1024 | riemann_aurora | 5.359 | 0.500 | 0.011 | 0.530 | 0.884 |
+| 512×2048 | muon | 2.217 | 0.022 | 0.000 | 0.300 | 0.865 |
+| 512×2048 | aurora | 4.662 | 0.180 | 0.000 | 0.404 | 0.928 |
+| 512×2048 | riemann_aurora | 76.498 | 0.067 | 0.000 | 0.313 | 0.905 |
 
-full table is in `benchmark_results.csv`. riemann aurora does what it is supposed to do on row uniformity, but it is very expensive in this raw cuda version.
+full table is in `benchmark_results.csv`. this grid is intentionally smaller now so riemann aurora is compared on shapes that can actually finish on the laptop.

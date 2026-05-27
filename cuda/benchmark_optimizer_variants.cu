@@ -271,19 +271,8 @@ Metrics run_optimizer_once(OptimizerKind kind, int N, int M, const std::vector<f
     fill_device(d_row_ema, N, 1.0f);
   }
 
-  int warmup_steps = 5;
-  int timed_steps = 20;
-  if(kind == RIEMANN_AURORA){
-    warmup_steps = 1;
-    timed_steps = 3;
-  }
-  if(size >= 8192 * 2048){
-    warmup_steps = std::min(warmup_steps, 2);
-    timed_steps = std::min(timed_steps, 5);
-  } else if(size >= 2048 * 2048){
-    warmup_steps = std::min(warmup_steps, 3);
-    timed_steps = std::min(timed_steps, 10);
-  }
+  int warmup_steps = 2;
+  int timed_steps = 5;
 
   for(int i = 0; i < warmup_steps; i++){
     run_step(kind, d_W, d_G, d_M, d_U, d_row_ema, N, M);
@@ -357,10 +346,10 @@ void write_row(std::ostream& out, const Metrics& m){
 int main(){
   std::vector<Shape> shapes = {
     {512, 128},
+    {1024, 256},
     {2048, 512},
-    {2048, 2048},
-    {8192, 2048},
-    {2048, 8192},
+    {1024, 1024},
+    {512, 2048},
   };
 
   std::ofstream csv("benchmark_results.csv");
