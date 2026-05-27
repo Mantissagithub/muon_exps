@@ -7,7 +7,7 @@ from pathlib import Path
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/muon_exps_matplotlib")
 
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation, PillowWriter
+from matplotlib import patches
 from matplotlib import ticker
 from matplotlib.gridspec import GridSpec
 
@@ -16,7 +16,6 @@ ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "artifacts" / "char_lm" / "results.csv"
 OUT = ROOT / "artifacts" / "char_lm" / "loss_curves.png"
 HTML_OUT = ROOT / "artifacts" / "char_lm" / "loss_report.html"
-GIF_OUT = ROOT / "artifacts" / "char_lm" / "loss_curves.gif"
 
 DISPLAY_NAMES = {
     "adamw": "AdamW",
@@ -44,7 +43,6 @@ def parse_args():
     p.add_argument("--results", type=Path, default=RESULTS)
     p.add_argument("--out", type=Path, default=OUT)
     p.add_argument("--html-out", type=Path, default=HTML_OUT)
-    p.add_argument("--gif-out", type=Path, default=GIF_OUT)
     return p.parse_args()
 
 
@@ -289,13 +287,13 @@ def render_html_report(args, summaries):
   <title>TinyShakespeare optimizer report</title>
   <style>
     :root {{
-      --bg: #f3f0e8;
-      --panel: rgba(255, 252, 246, 0.86);
-      --panel-strong: #fffdf8;
+      --bg: #f6f4ee;
+      --panel: rgba(255, 255, 255, 0.84);
+      --panel-strong: #ffffff;
       --ink: #171717;
-      --muted: #5f5b52;
+      --muted: #667085;
       --hairline: rgba(23, 23, 23, 0.12);
-      --shadow: 0 22px 60px rgba(54, 41, 21, 0.12);
+      --shadow: 0 24px 70px rgba(22, 30, 45, 0.10);
       --display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
       --body: "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
       --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
@@ -306,9 +304,9 @@ def render_html_report(args, summaries):
       font-family: var(--body);
       color: var(--ink);
       background:
-        radial-gradient(circle at top left, rgba(212, 160, 23, 0.18), transparent 34%),
-        radial-gradient(circle at 86% 0%, rgba(37, 99, 235, 0.12), transparent 24%),
-        linear-gradient(180deg, #f7f4ed 0%, var(--bg) 100%);
+        radial-gradient(circle at 16% 0%, rgba(255, 107, 0, 0.10), transparent 30%),
+        radial-gradient(circle at 84% 8%, rgba(0, 194, 168, 0.09), transparent 28%),
+        linear-gradient(180deg, #fbfaf7 0%, var(--bg) 100%);
       min-height: 100vh;
     }}
     body::before {{
@@ -373,7 +371,6 @@ def render_html_report(args, summaries):
     }}
     .stat-card {{
       padding: 18px 18px 16px;
-      animation: rise-in 0.8s cubic-bezier(.2,.8,.2,1) both;
     }}
     .stat-label {{
       color: var(--muted);
@@ -394,12 +391,11 @@ def render_html_report(args, summaries):
     }}
     .dashboard {{
       display: grid;
-      grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.9fr);
+      grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.78fr);
       gap: 18px;
     }}
     .panel {{
       padding: 22px;
-      animation: rise-in 0.85s cubic-bezier(.2,.8,.2,1) both;
     }}
     .panel h2 {{
       margin: 0;
@@ -428,13 +424,12 @@ def render_html_report(args, summaries):
     }}
     .chart-frame {{
       position: relative;
-      min-height: 560px;
+      min-height: 0;
       border-radius: 22px;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.38)),
-        linear-gradient(135deg, rgba(255,255,255,0.62), rgba(230,221,205,0.28));
+      background: #ffffff;
       border: 1px solid rgba(23, 23, 23, 0.08);
       overflow: hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.80);
     }}
     .chart-caption {{
       position: absolute;
@@ -659,7 +654,7 @@ def render_html_report(args, summaries):
       border-radius: 22px;
       overflow: hidden;
       border: 1px solid rgba(23, 23, 23, 0.08);
-      background: rgba(255,255,255,0.7);
+      background: rgba(255,255,255,0.82);
     }}
     .snapshot img {{
       display: block;
@@ -679,6 +674,36 @@ def render_html_report(args, summaries):
       color: #5d584f;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+    }}
+    .read-card {{
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .read-pill {{
+      border: 1px solid rgba(23,23,23,0.08);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.72);
+      padding: 14px;
+    }}
+    .read-label {{
+      color: #7a7468;
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      font-size: 10px;
+    }}
+    .read-value {{
+      margin-top: 8px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }}
+    .read-note {{
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
     }}
     @keyframes draw-line {{
       to {{ stroke-dashoffset: 0; }}
@@ -719,6 +744,7 @@ def render_html_report(args, summaries):
       .chart-svg {{ height: 500px; }}
       .endpoint-column {{ display: none; }}
       .table-wrap {{ margin-top: 12px; }}
+      .read-card {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -756,33 +782,30 @@ def render_html_report(args, summaries):
       <div class="panel">
         <div class="panel-title">
           <div>
-            <h2>trajectory</h2>
-            <div class="panel-strong-label">validation loss over time</div>
+            <h2>static trajectory</h2>
+            <div class="panel-strong-label">validation loss with late-run zoom</div>
           </div>
           <div class="panel-note">{fmt_step(max_step)} steps · {len(summaries)} optimizers</div>
         </div>
         <div class="chart-frame">
-          <div class="chart-caption">
-            <div class="eyebrow">winner callout</div>
-            <h3>{html.escape(leader['label'])} leads this saved run</h3>
-            <p>
-              best validation loss landed at {fmt_loss(leader['best_val'])}. final checkpoint finish belongs to
-              {html.escape(sharpest_finish['label'])} at {fmt_loss(sharpest_finish['final_val'])}.
-            </p>
+          <img src="{image_name}" alt="Static validation loss plot" style="display:block;width:100%;height:auto;">
+        </div>
+        <div class="read-card">
+          <div class="read-pill">
+            <div class="read-label">winner</div>
+            <div class="read-value">{html.escape(leader['label'])} · {fmt_loss(leader['best_val'])}</div>
+            <div class="read-note">best validation at step {fmt_step(leader['best_step'])}</div>
           </div>
-          <svg class="chart-svg" viewBox="0 0 {chart_w} {chart_h}" role="img" aria-label="validation loss chart">
-            <rect x="0" y="0" width="{chart_w}" height="{chart_h}" fill="transparent"/>
-            {''.join(grid_lines)}
-            {''.join(x_ticks)}
-            <line x1="{chart_left}" y1="{chart_bottom}" x2="{chart_right}" y2="{chart_bottom}" class="grid-line"/>
-            <line x1="{chart_left}" y1="{chart_top}" x2="{chart_left}" y2="{chart_bottom}" class="grid-line"/>
-            {''.join(line_layers)}
-          </svg>
-          <div class="endpoint-column">
-            {''.join(endpoint_labels)}
+          <div class="read-pill">
+            <div class="read-label">next best gap</div>
+            <div class="read-value">{fmt_loss(gap)}</div>
+            <div class="read-note">margin over {html.escape(runner_up['label']) if runner_up else "the next run"}</div>
           </div>
-          <div class="chart-axis-title x">training step</div>
-          <div class="chart-axis-title y">validation loss</div>
+          <div class="read-pill">
+            <div class="read-label">best final checkpoint</div>
+            <div class="read-value">{html.escape(sharpest_finish['label'])}</div>
+            <div class="read-note">final val {fmt_loss(sharpest_finish['final_val'])}</div>
+          </div>
         </div>
       </div>
 
@@ -842,14 +865,22 @@ def render_html_report(args, summaries):
       <div class="panel">
         <div class="panel-title">
           <div>
-            <h2>static export</h2>
-            <div class="panel-strong-label">png snapshot</div>
+            <h2>artifact note</h2>
+            <div class="panel-strong-label">what to share</div>
           </div>
-          <div class="panel-note">shareable still</div>
+          <div class="panel-note">static only</div>
         </div>
-        <div class="snapshot">
-          <div class="snapshot-badge">static artifact</div>
-          <img src="{image_name}" alt="Static validation loss plot">
+        <div class="read-card" style="grid-template-columns:1fr;">
+          <div class="read-pill">
+            <div class="read-label">png</div>
+            <div class="read-value">loss_curves.png</div>
+            <div class="read-note">clean static chart, good for README and quick sharing.</div>
+          </div>
+          <div class="read-pill">
+            <div class="read-label">html</div>
+            <div class="read-value">loss_report.html</div>
+            <div class="read-note">same numbers with ranking, runtime, and checkpoint table.</div>
+          </div>
         </div>
       </div>
     </section>
@@ -861,170 +892,330 @@ def render_html_report(args, summaries):
     args.html_out.write_text(html_text, encoding="utf-8")
 
 
-def render_gif_report(args, summaries):
+def dashboard_bounds(summaries):
+    vals = [row["val_loss"] for summary in summaries for row in summary["rows"]]
+    ymin = min(vals)
+    ymax = max(vals)
+    span = max(ymax - ymin, 1e-6)
+    return ymin - span * 0.04, ymax + span * 0.08
+
+
+def add_card(ax, xy, width, height, edge="#223047", face="#07101e", lw=1.0, alpha=0.98):
+    card = patches.FancyBboxPatch(
+        xy,
+        width,
+        height,
+        boxstyle="round,pad=0.012",
+        transform=ax.transAxes,
+        linewidth=lw,
+        edgecolor=edge,
+        facecolor=face,
+        alpha=alpha,
+        clip_on=False,
+    )
+    ax.add_patch(card)
+    return card
+
+
+def dashboard_color(optimizer):
+    if optimizer == "adamw":
+        return "#e5e7eb"
+    return PALETTE.get(optimizer, "#94a3b8")
+
+
+def setup_dashboard_axes(fig):
+    fig.patch.set_facecolor("#050914")
+    ax_bg = fig.add_axes([0, 0, 1, 1])
+    ax_bg.set_axis_off()
+    ax_bg.set_facecolor("#050914")
+    ax_bg.add_patch(
+        patches.Rectangle((0, 0), 1, 1, transform=ax_bg.transAxes, facecolor="#050914", edgecolor="none")
+    )
+    ax_bg.add_patch(
+        patches.Circle((0.33, 0.80), 0.42, transform=ax_bg.transAxes, facecolor="#0b2b55", edgecolor="none", alpha=0.22)
+    )
+    ax_bg.add_patch(
+        patches.Circle((0.76, 0.18), 0.36, transform=ax_bg.transAxes, facecolor="#1c0f39", edgecolor="none", alpha=0.18)
+    )
+
+    ax_chart = fig.add_axes([0.055, 0.25, 0.665, 0.60])
+    ax_rank = fig.add_axes([0.735, 0.25, 0.235, 0.60])
+    ax_bottom = fig.add_axes([0.055, 0.055, 0.915, 0.13])
+    for ax in [ax_chart, ax_rank, ax_bottom]:
+        ax.set_facecolor("#07101e")
+        for spine in ax.spines.values():
+            spine.set_color("#223047")
+            spine.set_linewidth(1.0)
+    return ax_bg, ax_chart, ax_rank, ax_bottom
+
+
+def style_dashboard_chart(ax, summaries):
+    ymin, ymax = dashboard_bounds(summaries)
     max_step = max(summary["rows"][-1]["step"] for summary in summaries)
-    all_val_losses = [row["val_loss"] for summary in summaries for row in summary["rows"]]
-    ymin = min(all_val_losses)
-    ymax = max(all_val_losses)
-    yrange = max(ymax - ymin, 1e-6)
-    ymin -= yrange * 0.05
-    ymax += yrange * 0.08
-
-    fig = plt.figure(figsize=(12.8, 6.6), facecolor="#0b1020")
-    gs = GridSpec(1, 2, figure=fig, width_ratios=[3.6, 1.35], wspace=0.12)
-    ax = fig.add_subplot(gs[0, 0])
-    ax_side = fig.add_subplot(gs[0, 1])
-
-    ax.set_facecolor("#121a2b")
-    for spine in ax.spines.values():
-        spine.set_color("#334155")
-    ax.grid(axis="y", color="#334155", linewidth=0.9, alpha=0.55)
-    ax.grid(axis="x", color="#1e293b", linewidth=0.7, alpha=0.55)
-    ax.set_xlabel("training step", fontsize=11, color="#cbd5e1")
-    ax.set_ylabel("validation loss", fontsize=11, color="#cbd5e1")
-    ax.tick_params(colors="#94a3b8", labelsize=10)
-    ax.xaxis.set_major_formatter(ticker.StrMethodFormatter("{x:,.0f}"))
-    ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.3f"))
     ax.set_xlim(0, max_step)
     ax.set_ylim(ymin, ymax)
-
-    ax_side.set_facecolor("#111827")
-    for spine in ax_side.spines.values():
-        spine.set_color("#374151")
-    ax_side.set_xticks([])
-    ax_side.set_yticks([])
-    ax_side.set_xlim(0, 1)
-    ax_side.set_ylim(0, 1)
-
-    leader = summaries[0]
-    ax.set_title("TinyShakespeare validation loss", loc="left", fontsize=18, fontweight="bold", color="#f8fafc", pad=16)
-    subtitle = ax.text(
-        0.0,
-        1.005,
-        f"animated training trajectory · leader: {leader['label']} at {leader['best_val']:.3f}",
-        transform=ax.transAxes,
-        fontsize=9.6,
-        color="#94a3b8",
-        va="bottom",
-    )
+    ax.grid(True, color="#1e2a3f", linestyle="--", linewidth=0.8, alpha=0.85)
+    ax.tick_params(colors="#a8b3c7", labelsize=10)
+    ax.xaxis.set_major_formatter(ticker.StrMethodFormatter("{x:,.0f}"))
+    ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.2f"))
+    ax.set_xlabel("training step", color="#c7d2e8", fontsize=11)
+    ax.set_ylabel("")
     ax.text(
-        0.995,
-        1.005,
-        f"{fmt_step(max_step)} steps",
+        0.02,
+        0.96,
+        "Validation loss (lower is better)",
         transform=ax.transAxes,
-        fontsize=9.6,
-        color="#94a3b8",
-        va="bottom",
-        ha="right",
+        color="#aeb8cc",
+        fontsize=11,
+        fontweight="semibold",
+        va="top",
+    )
+    return ymin, ymax, max_step
+
+
+def draw_dashboard_header(fig, summaries):
+    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
+    fig.text(0.078, 0.918, "TinyShakespeare validation loss", color="#f8fafc", fontsize=25, fontweight="bold")
+    fig.text(
+        0.078,
+        0.887,
+        f"{fmt_step(max_step)} steps  ·  {len(summaries)} optimizers  ·  lower is better",
+        color="#8f9bae",
+        fontsize=11,
     )
 
-    ax_side.text(0.08, 0.91, leader["label"], fontsize=24, color="#f8fafc", fontweight="bold")
-    side_best = ax_side.text(
-        0.08,
-        0.83,
-        f"best val {leader['best_val']:.3f}\nat step {fmt_step(leader['best_step'])}",
-        fontsize=10.2,
-        color="#cbd5e1",
-        linespacing=1.35,
-    )
-    progress_text = ax_side.text(
-        0.08,
-        0.745,
-        "progress 0%",
-        fontsize=10,
-        color="#94a3b8",
-        family="monospace",
-    )
-    progress_bar_bg = plt.Rectangle((0.08, 0.712), 0.84, 0.018, facecolor="#1f2937", edgecolor="none")
-    progress_bar = plt.Rectangle((0.08, 0.712), 0.0, 0.018, facecolor="#e2e8f0", edgecolor="none")
-    ax_side.add_patch(progress_bar_bg)
-    ax_side.add_patch(progress_bar)
 
+def plot_dashboard_lines(ax, summaries, active_points=None, show_labels=True):
+    ymin, ymax, max_step = style_dashboard_chart(ax, summaries)
     line_artists = {}
     point_artists = {}
-    panel_value_artists = {}
-    panel_delta_artists = {}
-    row_y_positions = [0.61 - i * 0.086 for i in range(len(summaries))]
+    active_points = active_points or max(len(summary["rows"]) for summary in summaries)
 
-    for idx, summary in enumerate(summaries):
-        color = PALETTE.get(summary["optimizer"], "#334155")
-        (line,) = ax.plot([], [], color=color, linewidth=1.8, solid_capstyle="round")
-        point = ax.scatter([], [], s=24, color=color, edgecolors="#e2e8f0", linewidths=0.9, zorder=5)
+    for summary in summaries:
+        color = dashboard_color(summary["optimizer"])
+        rows = summary["rows"][:active_points]
+        xs = [row["step"] for row in rows]
+        ys = [row["val_loss"] for row in rows]
+        (line,) = ax.plot(xs, ys, color=color, linewidth=2.0, solid_capstyle="round")
+        point = ax.scatter(xs[-1:], ys[-1:], s=34, color=color, edgecolors="#dbeafe", linewidths=1.0, zorder=6)
         line_artists[summary["optimizer"]] = line
         point_artists[summary["optimizer"]] = point
 
-        y = row_y_positions[idx]
-        ax_side.add_patch(plt.Rectangle((0.08, y - 0.012), 0.022, 0.022, facecolor=color, edgecolor="none"))
-        ax_side.text(0.12, y, summary["label"], va="center", fontsize=10.2, color="#e5e7eb", fontweight="semibold")
-        panel_value_artists[summary["optimizer"]] = ax_side.text(
-            0.92,
-            y,
-            "....",
-            ha="right",
-            va="center",
-            fontsize=10.8,
-            color=color,
-            family="monospace",
-            fontweight="semibold",
+    leader = summaries[0]
+    if show_labels:
+        best_step = leader["best_step"]
+        ax.axvline(best_step, color="#d1d5db", linestyle="--", linewidth=1.1, alpha=0.75)
+        ax.text(
+            best_step,
+            ymax - (ymax - ymin) * 0.055,
+            fmt_step(best_step),
+            color="#ff6b00",
+            fontsize=10,
+            fontweight="bold",
+            ha="center",
+            bbox={"boxstyle": "round,pad=0.35", "facecolor": "#07101e", "edgecolor": "#223047"},
         )
-        panel_delta_artists[summary["optimizer"]] = ax_side.text(
-            0.92,
-            y - 0.032,
-            "",
-            ha="right",
-            va="center",
-            fontsize=8.0,
-            color="#94a3b8",
-            family="monospace",
-        )
-
-    total_points = max(len(summary["rows"]) for summary in summaries)
-    hold_frames = 20
-    total_frames = total_points + hold_frames
-
-    def update(frame_idx):
-        active_points = min(frame_idx + 1, total_points)
-        progress = active_points / max(total_points, 1)
-
-        for summary in summaries:
-            rows = summary["rows"][:active_points]
-            xs = [row["step"] for row in rows]
-            ys = [row["val_loss"] for row in rows]
-            line_artists[summary["optimizer"]].set_data(xs, ys)
-            if rows:
-                point_artists[summary["optimizer"]].set_offsets([[xs[-1], ys[-1]]])
-                panel_value_artists[summary["optimizer"]].set_text(f"{ys[-1]:.3f}")
-                panel_delta_artists[summary["optimizer"]].set_text(f"best {summary['best_val']:.3f}")
-            else:
-                point_artists[summary["optimizer"]].set_offsets([])
-                panel_value_artists[summary["optimizer"]].set_text("....")
-                panel_delta_artists[summary["optimizer"]].set_text("")
-
-        progress_bar.set_width(0.84 * progress)
-        progress_text.set_text(f"progress {progress * 100:5.1f}%")
-
-        if frame_idx >= total_points - 1:
-            subtitle.set_text(
-                f"animated training trajectory · winner: {leader['label']} · best val {leader['best_val']:.3f}"
+        final_rows = sorted(summaries, key=lambda item: item["best_val"], reverse=True)
+        top = min(ymax - (ymax - ymin) * 0.18, 2.25)
+        bottom = max(ymin + (ymax - ymin) * 0.10, 1.54)
+        label_values = [top - idx * ((top - bottom) / max(len(final_rows) - 1, 1)) for idx in range(len(final_rows))]
+        x_label = max_step * 0.80
+        for summary, label_y in zip(final_rows, label_values):
+            color = dashboard_color(summary["optimizer"])
+            ax.text(
+                x_label,
+                label_y,
+                f"{summary['label']}  {summary['best_val']:.3f}",
+                color=color,
+                fontsize=10,
+                fontweight="semibold",
+                va="center",
             )
-            progress_text.set_text("progress 100.0% · final frame")
-            side_best.set_text(
-                f"best val {leader['best_val']:.3f}\nat step {fmt_step(leader['best_step'])}"
-            )
+    return line_artists, point_artists
 
-        artists = (
-            list(line_artists.values())
-            + list(point_artists.values())
-            + list(panel_value_artists.values())
-            + list(panel_delta_artists.values())
-            + [subtitle, side_best, progress_text, progress_bar]
-        )
-        return artists
 
-    anim = FuncAnimation(fig, update, frames=total_frames, interval=170, blit=False)
-    args.gif_out.parent.mkdir(parents=True, exist_ok=True)
-    fig.subplots_adjust(top=0.90, left=0.08, right=0.97, bottom=0.12)
-    anim.save(args.gif_out, writer=PillowWriter(fps=8))
+def draw_dashboard_rank(ax, summaries, active_points=None):
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    for spine in ax.spines.values():
+        spine.set_color("#223047")
+
+    active_points = active_points or max(len(summary["rows"]) for summary in summaries)
+    leader = summaries[0]
+    runner_up = summaries[1] if len(summaries) > 1 else None
+    gap = runner_up["best_val"] - leader["best_val"] if runner_up else 0.0
+
+    add_card(ax, (0.03, 0.76), 0.94, 0.20, edge="#ff6b00", face="#0a0f1c", lw=1.1)
+    ax.text(0.08, 0.92, "CURRENT LEADER", color="#ff6b00", fontsize=8.8, fontweight="bold", va="top")
+    ax.text(0.08, 0.85, leader["label"], color="#f8fafc", fontsize=18, fontweight="bold", va="top")
+    ax.text(0.90, 0.80, f"{leader['best_val']:.3f}", color="#ff6b00", fontsize=24, fontweight="bold", ha="right", va="top")
+    ax.text(0.08, 0.78, f"+{gap:.3f} vs {runner_up['label'] if runner_up else 'next'}", color="#ff6b00", fontsize=9.5, fontweight="bold")
+
+    progress = (active_points - 1) / max(max(len(summary["rows"]) for summary in summaries) - 1, 1)
+    current_step = int(round(max(summary["rows"][-1]["step"] for summary in summaries) * progress))
+    add_card(ax, (0.03, 0.58), 0.94, 0.14, edge="#223047", face="#091426", lw=1.0)
+    ax.text(0.08, 0.69, "PROGRESS", color="#9aa6bb", fontsize=8.5, fontweight="bold", va="top")
+    ax.text(0.08, 0.62, f"step {fmt_step(current_step)}", color="#f8fafc", fontsize=16, fontweight="bold")
+    ax.text(0.52, 0.62, f"/ {fmt_step(max(summary['rows'][-1]['step'] for summary in summaries))}", color="#9aa6bb", fontsize=11)
+    ax.add_patch(patches.FancyBboxPatch((0.08, 0.595), 0.82, 0.012, boxstyle="round,pad=0", transform=ax.transAxes, facecolor="#2b3342", edgecolor="none"))
+    ax.add_patch(patches.FancyBboxPatch((0.08, 0.595), 0.82 * progress, 0.012, boxstyle="round,pad=0", transform=ax.transAxes, facecolor="#ff6b00", edgecolor="none"))
+
+    add_card(ax, (0.03, 0.04), 0.94, 0.50, edge="#223047", face="#091426", lw=1.0)
+    ax.text(0.08, 0.50, "LIVE RANKING", color="#9aa6bb", fontsize=8.5, fontweight="bold", va="top")
+    live_rows = []
+    for summary in summaries:
+        row = summary["rows"][min(active_points - 1, len(summary["rows"]) - 1)]
+        live_rows.append((row["val_loss"], summary))
+    live_rows.sort(key=lambda item: item[0])
+
+    y = 0.44
+    for idx, (current_val, summary) in enumerate(live_rows, start=1):
+        color = dashboard_color(summary["optimizer"])
+        if idx == 1:
+            ax.add_patch(patches.Rectangle((0.06, y - 0.025), 0.88, 0.045, transform=ax.transAxes, facecolor="#261b13", edgecolor="none"))
+        ax.text(0.08, y, str(idx), color="#cbd5e1", fontsize=9, va="center")
+        ax.scatter([0.17], [y], s=28, color=color, transform=ax.transAxes)
+        ax.text(0.22, y, summary["label"], color="#e5e7eb", fontsize=9.5, fontweight="semibold", va="center")
+        ax.text(0.90, y, f"{summary['best_val']:.3f}", color=color, fontsize=10, fontweight="bold", ha="right", va="center")
+        y -= 0.061
+
+
+def draw_dashboard_bottom(ax, summaries):
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    for spine in ax.spines.values():
+        spine.set_color("#223047")
+
+    leader = summaries[0]
+    fastest = sorted(summaries, key=lambda item: item["final_elapsed_s"])[:5]
+    ax.text(0.04, 0.65, "WINNER", color="#ff6b00", fontsize=9, fontweight="bold")
+    ax.text(0.04, 0.34, leader["label"], color="#f8fafc", fontsize=19, fontweight="bold")
+    ax.text(0.20, 0.34, f"{leader['best_val']:.3f}", color="#ff6b00", fontsize=23, fontweight="bold")
+    ax.plot([0.30, 0.30], [0.18, 0.82], color="#223047", linewidth=1)
+    ax.text(0.33, 0.70, "WALL TIME TO FINAL CHECKPOINT", color="#9aa6bb", fontsize=9, fontweight="bold")
+
+    x = 0.33
+    max_elapsed = max(summary["final_elapsed_s"] for summary in fastest)
+    for summary in fastest[:4]:
+        color = dashboard_color(summary["optimizer"])
+        ax.text(x, 0.48, summary["label"], color="#e5e7eb", fontsize=9, fontweight="semibold")
+        ax.add_patch(patches.FancyBboxPatch((x, 0.28), 0.07, 0.055, boxstyle="round,pad=0.01", transform=ax.transAxes, facecolor="#2b3342", edgecolor="none"))
+        ax.add_patch(patches.FancyBboxPatch((x, 0.28), 0.07 * (summary["final_elapsed_s"] / max_elapsed), 0.055, boxstyle="round,pad=0.01", transform=ax.transAxes, facecolor=color, edgecolor="none"))
+        ax.text(x + 0.08, 0.30, fmt_seconds(summary["final_elapsed_s"]), color="#cbd5e1", fontsize=9, va="center")
+        x += 0.16
+
+
+def render_dashboard_png(args, summaries):
+    fig = plt.figure(figsize=(14.6, 8.2), dpi=180)
+    _, ax_chart, ax_rank, ax_bottom = setup_dashboard_axes(fig)
+    draw_dashboard_header(fig, summaries)
+    plot_dashboard_lines(ax_chart, summaries, show_labels=True)
+    draw_dashboard_rank(ax_rank, summaries)
+    draw_dashboard_bottom(ax_bottom, summaries)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(args.out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.1)
+    plt.close(fig)
+
+
+def render_clean_png(args, summaries):
+    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
+    all_losses = [row["val_loss"] for summary in summaries for row in summary["rows"]]
+    ymin = min(all_losses)
+    ymax = max(all_losses)
+    span = max(ymax - ymin, 1e-6)
+
+    fig, ax = plt.subplots(figsize=(10.8, 6.0), dpi=190, facecolor="#ffffff")
+    ax.set_facecolor("#ffffff")
+    for spine in ax.spines.values():
+        spine.set_color("#e5e7eb")
+        spine.set_linewidth(1.0)
+
+    ax.grid(axis="y", color="#edf1f5", linewidth=0.75)
+    ax.grid(axis="x", color="#f5f7fa", linewidth=0.55)
+    ax.tick_params(colors="#a3acba", labelsize=8)
+    ax.set_xlabel("Training step", color="#8b95a7", fontsize=8, labelpad=10)
+    ax.set_ylabel("Loss", color="#8b95a7", fontsize=8, labelpad=10)
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k" if x else "0k"))
+    ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
+    ax.set_xlim(0, max_step)
+    ax.set_ylim(max(0.0, ymin - span * 0.05), ymax + span * 0.04)
+
+    # Keep the main view readable, then use the inset for the late-run differences.
+    show_order = sorted(summaries, key=lambda item: item["best_val"])
+    for summary in show_order:
+        color = PALETTE.get(summary["optimizer"], "#334155")
+        alpha = 0.98 if summary is summaries[0] else 0.72
+        width = 1.85 if summary is summaries[0] else 1.25
+        steps = [row["step"] for row in summary["rows"]]
+        vals = [row["val_loss"] for row in summary["rows"]]
+        ax.plot(steps, vals, color=color, linewidth=width, alpha=alpha, label=summary["label"], solid_capstyle="round")
+
+    zoom_start = int(max_step * 0.62)
+    inset = ax.inset_axes([0.64, 0.43, 0.32, 0.34])
+    inset.set_facecolor("#ffffff")
+    for spine in inset.spines.values():
+        spine.set_color("#e5e7eb")
+        spine.set_linewidth(0.8)
+    inset.grid(axis="y", color="#edf1f5", linewidth=0.55)
+    inset.grid(axis="x", color="#f5f7fa", linewidth=0.45)
+    inset.tick_params(colors="#a3acba", labelsize=6, length=2)
+    inset.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k"))
+    inset.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.2f"))
+    inset.set_xlim(zoom_start, max_step)
+
+    zoom_vals = []
+    for summary in show_order:
+        rows = [row for row in summary["rows"] if row["step"] >= zoom_start]
+        steps = [row["step"] for row in rows]
+        vals = [row["val_loss"] for row in rows]
+        zoom_vals.extend(vals)
+        color = PALETTE.get(summary["optimizer"], "#334155")
+        width = 1.5 if summary is summaries[0] else 1.0
+        inset.plot(steps, vals, color=color, linewidth=width, alpha=0.92, solid_capstyle="round")
+
+    if zoom_vals:
+        zmin = min(zoom_vals)
+        zmax = max(zoom_vals)
+        zspan = max(zmax - zmin, 1e-6)
+        inset.set_ylim(zmin - zspan * 0.12, zmax + zspan * 0.18)
+    ax.indicate_inset_zoom(inset, edgecolor="#e5e7eb", linewidth=0.9, alpha=0.9)
+
+    legend = ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.12),
+        ncol=min(4, len(show_order)),
+        frameon=False,
+        fontsize=8,
+        handlelength=1.8,
+        columnspacing=1.6,
+    )
+    for text in legend.get_texts():
+        text.set_color("#4b5563")
+
+    fig.text(0.075, 0.935, "TinyShakespeare validation loss", color="#111827", fontsize=16, fontweight="bold")
+    fig.text(
+        0.075,
+        0.905,
+        f"{fmt_step(max_step)} steps · {len(summaries)} optimizers · inset shows the late-run spread",
+        color="#8b95a7",
+        fontsize=8.5,
+    )
+    fig.text(
+        0.73,
+        0.905,
+        f"best: {summaries[0]['label']} {summaries[0]['best_val']:.3f}",
+        color=PALETTE.get(summaries[0]["optimizer"], "#111827"),
+        fontsize=9,
+        fontweight="bold",
+    )
+
+    fig.subplots_adjust(left=0.075, right=0.98, top=0.86, bottom=0.20)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(args.out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
     plt.close(fig)
 
 
@@ -1035,150 +1226,10 @@ def main():
         raise ValueError(f"no rows found in {args.results}")
 
     summaries = summarize(by_opt)
-    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
-    all_val_losses = [row["val_loss"] for summary in summaries for row in summary["rows"]]
-    ymin = min(all_val_losses)
-    ymax = max(all_val_losses)
-    yrange = max(ymax - ymin, 1e-6)
-    label_gap = max(0.018, yrange * 0.04)
-
-    fig = plt.figure(figsize=(14, 8), facecolor="white")
-    gs = GridSpec(2, 2, figure=fig, width_ratios=[3.3, 1.4], height_ratios=[1, 1], wspace=0.22, hspace=0.28)
-    ax_curve = fig.add_subplot(gs[:, 0])
-    ax_rank = fig.add_subplot(gs[0, 1])
-    ax_time = fig.add_subplot(gs[1, 1])
-
-    for side_ax in [ax_curve, ax_rank, ax_time]:
-        side_ax.set_facecolor("#fbfbfc")
-        for spine in side_ax.spines.values():
-            spine.set_color("#d4d4d8")
-
-    ax_curve.grid(axis="y", color="#e5e7eb", linewidth=1.0)
-    ax_curve.grid(axis="x", color="#f1f5f9", linewidth=0.7)
-
-    ordered_for_labels = sorted(summaries, key=lambda item: item["final_val"])
-    final_targets = spread_positions([item["final_val"] for item in ordered_for_labels], label_gap)
-    final_label_map = {
-        item["optimizer"]: target
-        for item, target in zip(ordered_for_labels, final_targets)
-    }
-
-    label_x = max_step * 1.065
-    for summary in summaries:
-        opt = summary["optimizer"]
-        rows = summary["rows"]
-        color = PALETTE.get(opt, "#334155")
-        steps = [row["step"] for row in rows]
-        vals = [row["val_loss"] for row in rows]
-        best_idx = summary["best_idx"]
-        markevery = max(1, len(steps) // 8)
-
-        ax_curve.plot(
-            steps,
-            vals,
-            color=color,
-            linewidth=2.4,
-            marker="o",
-            markersize=3.5,
-            markevery=markevery,
-            solid_capstyle="round",
-        )
-        ax_curve.scatter(
-            [steps[best_idx]],
-            [vals[best_idx]],
-            s=54,
-            facecolors="white",
-            edgecolors=color,
-            linewidths=2,
-            zorder=5,
-        )
-
-        final_x = steps[-1]
-        final_y = vals[-1]
-        label_y = final_label_map[opt]
-        ax_curve.plot([final_x, label_x - max_step * 0.01], [final_y, label_y], color=color, linewidth=1.1, alpha=0.8)
-        ax_curve.text(
-            label_x,
-            label_y,
-            f"{summary['label']}  {final_y:.3f}",
-            va="center",
-            ha="left",
-            fontsize=10,
-            color=color,
-            fontweight="semibold",
-        )
-
-    leader = summaries[0]
-    runner_up = summaries[1] if len(summaries) > 1 else None
-    lead_text = f"best val: {leader['label']} at {leader['best_val']:.3f}"
-    if runner_up is not None:
-        gap = runner_up["best_val"] - leader["best_val"]
-        lead_text += f"   |   margin to next: {gap:.3f}"
-
-    ax_curve.set_xlabel("training step", fontsize=11, color="#374151")
-    ax_curve.set_ylabel("validation loss", fontsize=11, color="#374151")
-    ax_curve.tick_params(colors="#4b5563", labelsize=10)
-    ax_curve.xaxis.set_major_formatter(ticker.StrMethodFormatter("{x:,.0f}"))
-    ax_curve.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.3f"))
-    ax_curve.set_xlim(0, max_step * 1.28)
-    ax_curve.set_ylim(ymin - yrange * 0.05, max(ymax + yrange * 0.06, max(final_targets) + yrange * 0.08))
-
-    rank_labels = [summary["label"] for summary in summaries]
-    rank_values = [summary["best_val"] for summary in summaries]
-    rank_colors = [PALETTE.get(summary["optimizer"], "#334155") for summary in summaries]
-    y_rank = list(range(len(summaries)))
-
-    ax_rank.barh(y_rank, rank_values, color=rank_colors, height=0.62)
-    ax_rank.invert_yaxis()
-    ax_rank.set_title("best validation loss", loc="left", fontsize=13, fontweight="bold", color="#111827", pad=10)
-    ax_rank.set_yticks(y_rank, rank_labels)
-    ax_rank.tick_params(axis="y", labelsize=10, colors="#374151")
-    ax_rank.tick_params(axis="x", labelsize=9, colors="#6b7280")
-    ax_rank.xaxis.set_major_formatter(ticker.FormatStrFormatter("%.3f"))
-    ax_rank.grid(axis="x", color="#e5e7eb", linewidth=1.0)
-    ax_rank.set_axisbelow(True)
-    ax_rank.set_xlim(0, max(rank_values) * 1.12)
-    for idx, value in enumerate(rank_values):
-        ax_rank.text(value + 0.002, idx, f"{value:.3f}", va="center", ha="left", fontsize=9.5, color="#111827")
-
-    time_sorted = sorted(summaries, key=lambda item: item["final_elapsed_s"])
-    time_labels = [summary["label"] for summary in time_sorted]
-    time_values = [summary["final_elapsed_s"] for summary in time_sorted]
-    time_colors = [PALETTE.get(summary["optimizer"], "#334155") for summary in time_sorted]
-    y_time = list(range(len(time_sorted)))
-
-    ax_time.barh(y_time, time_values, color=time_colors, height=0.62)
-    ax_time.invert_yaxis()
-    ax_time.set_title("wall time to final checkpoint", loc="left", fontsize=13, fontweight="bold", color="#111827", pad=10)
-    ax_time.set_yticks(y_time, time_labels)
-    ax_time.tick_params(axis="y", labelsize=10, colors="#374151")
-    ax_time.tick_params(axis="x", labelsize=9, colors="#6b7280")
-    ax_time.xaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.0f}s"))
-    ax_time.grid(axis="x", color="#e5e7eb", linewidth=1.0)
-    ax_time.set_axisbelow(True)
-    ax_time.set_xlim(0, max(time_values) * 1.16)
-    for idx, value in enumerate(time_values):
-        ax_time.text(value + max(time_values) * 0.015, idx, f"{value:.0f}s", va="center", ha="left", fontsize=9.5, color="#111827")
-
-    fig.suptitle("TinyShakespeare validation loss", x=0.08, y=0.972, ha="left", fontsize=20, fontweight="bold", color="#111827")
-    fig.text(
-        0.08,
-        0.92,
-        f"lower is better · {max_step:,} training steps · {len(summaries)} optimizers · {lead_text}",
-        ha="left",
-        va="bottom",
-        fontsize=10.5,
-        color="#4b5563",
-    )
-    fig.subplots_adjust(top=0.905, right=0.96, left=0.08, bottom=0.09)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(args.out, dpi=220, bbox_inches="tight")
-    plt.close(fig)
+    render_clean_png(args, summaries)
     render_html_report(args, summaries)
-    render_gif_report(args, summaries)
     print(f"wrote {args.out}")
     print(f"wrote {args.html_out}")
-    print(f"wrote {args.gif_out}")
 
 
 if __name__ == "__main__":

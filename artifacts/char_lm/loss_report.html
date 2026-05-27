@@ -6,13 +6,13 @@
   <title>TinyShakespeare optimizer report</title>
   <style>
     :root {
-      --bg: #f3f0e8;
-      --panel: rgba(255, 252, 246, 0.86);
-      --panel-strong: #fffdf8;
+      --bg: #f6f4ee;
+      --panel: rgba(255, 255, 255, 0.84);
+      --panel-strong: #ffffff;
       --ink: #171717;
-      --muted: #5f5b52;
+      --muted: #667085;
       --hairline: rgba(23, 23, 23, 0.12);
-      --shadow: 0 22px 60px rgba(54, 41, 21, 0.12);
+      --shadow: 0 24px 70px rgba(22, 30, 45, 0.10);
       --display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
       --body: "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
       --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
@@ -23,9 +23,9 @@
       font-family: var(--body);
       color: var(--ink);
       background:
-        radial-gradient(circle at top left, rgba(212, 160, 23, 0.18), transparent 34%),
-        radial-gradient(circle at 86% 0%, rgba(37, 99, 235, 0.12), transparent 24%),
-        linear-gradient(180deg, #f7f4ed 0%, var(--bg) 100%);
+        radial-gradient(circle at 16% 0%, rgba(255, 107, 0, 0.10), transparent 30%),
+        radial-gradient(circle at 84% 8%, rgba(0, 194, 168, 0.09), transparent 28%),
+        linear-gradient(180deg, #fbfaf7 0%, var(--bg) 100%);
       min-height: 100vh;
     }
     body::before {
@@ -90,7 +90,6 @@
     }
     .stat-card {
       padding: 18px 18px 16px;
-      animation: rise-in 0.8s cubic-bezier(.2,.8,.2,1) both;
     }
     .stat-label {
       color: var(--muted);
@@ -111,12 +110,11 @@
     }
     .dashboard {
       display: grid;
-      grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.9fr);
+      grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.78fr);
       gap: 18px;
     }
     .panel {
       padding: 22px;
-      animation: rise-in 0.85s cubic-bezier(.2,.8,.2,1) both;
     }
     .panel h2 {
       margin: 0;
@@ -145,13 +143,12 @@
     }
     .chart-frame {
       position: relative;
-      min-height: 560px;
+      min-height: 0;
       border-radius: 22px;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.38)),
-        linear-gradient(135deg, rgba(255,255,255,0.62), rgba(230,221,205,0.28));
+      background: #ffffff;
       border: 1px solid rgba(23, 23, 23, 0.08);
       overflow: hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.80);
     }
     .chart-caption {
       position: absolute;
@@ -376,7 +373,7 @@
       border-radius: 22px;
       overflow: hidden;
       border: 1px solid rgba(23, 23, 23, 0.08);
-      background: rgba(255,255,255,0.7);
+      background: rgba(255,255,255,0.82);
     }
     .snapshot img {
       display: block;
@@ -396,6 +393,36 @@
       color: #5d584f;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+    }
+    .read-card {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .read-pill {
+      border: 1px solid rgba(23,23,23,0.08);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.72);
+      padding: 14px;
+    }
+    .read-label {
+      color: #7a7468;
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      font-size: 10px;
+    }
+    .read-value {
+      margin-top: 8px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .read-note {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
     }
     @keyframes draw-line {
       to { stroke-dashoffset: 0; }
@@ -436,6 +463,7 @@
       .chart-svg { height: 500px; }
       .endpoint-column { display: none; }
       .table-wrap { margin-top: 12px; }
+      .read-card { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -473,117 +501,30 @@
       <div class="panel">
         <div class="panel-title">
           <div>
-            <h2>trajectory</h2>
-            <div class="panel-strong-label">validation loss over time</div>
+            <h2>static trajectory</h2>
+            <div class="panel-strong-label">validation loss with late-run zoom</div>
           </div>
           <div class="panel-note">15,000 steps · 7 optimizers</div>
         </div>
         <div class="chart-frame">
-          <div class="chart-caption">
-            <div class="eyebrow">winner callout</div>
-            <h3>U-NorMuon leads this saved run</h3>
-            <p>
-              best validation loss landed at 1.506. final checkpoint finish belongs to
-              U-NorMuon at 1.539.
-            </p>
+          <img src="loss_curves.png" alt="Static validation loss plot" style="display:block;width:100%;height:auto;">
+        </div>
+        <div class="read-card">
+          <div class="read-pill">
+            <div class="read-label">winner</div>
+            <div class="read-value">U-NorMuon · 1.506</div>
+            <div class="read-note">best validation at step 10,500</div>
           </div>
-          <svg class="chart-svg" viewBox="0 0 920 500" role="img" aria-label="validation loss chart">
-            <rect x="0" y="0" width="920" height="500" fill="transparent"/>
-            <line x1="74" y1="28.00" x2="794" y2="28.00" class="grid-line"/><text x="60" y="32.00" class="axis-label axis-label-y">4.562</text><line x1="74" y1="129.00" x2="794" y2="129.00" class="grid-line"/><text x="60" y="133.00" class="axis-label axis-label-y">3.762</text><line x1="74" y1="230.00" x2="794" y2="230.00" class="grid-line"/><text x="60" y="234.00" class="axis-label axis-label-y">2.961</text><line x1="74" y1="331.00" x2="794" y2="331.00" class="grid-line"/><text x="60" y="335.00" class="axis-label axis-label-y">2.161</text><line x1="74" y1="432.00" x2="794" y2="432.00" class="grid-line"/><text x="60" y="436.00" class="axis-label axis-label-y">1.361</text>
-            <line x1="74.00" y1="28" x2="74.00" y2="432" class="grid-line grid-line-v"/><text x="74.00" y="460" class="axis-label axis-label-x">0</text><line x1="194.00" y1="28" x2="194.00" y2="432" class="grid-line grid-line-v"/><text x="194.00" y="460" class="axis-label axis-label-x">2,500</text><line x1="314.00" y1="28" x2="314.00" y2="432" class="grid-line grid-line-v"/><text x="314.00" y="460" class="axis-label axis-label-x">5,000</text><line x1="434.00" y1="28" x2="434.00" y2="432" class="grid-line grid-line-v"/><text x="434.00" y="460" class="axis-label axis-label-x">7,500</text><line x1="554.00" y1="28" x2="554.00" y2="432" class="grid-line grid-line-v"/><text x="554.00" y="460" class="axis-label axis-label-x">10,000</text><line x1="674.00" y1="28" x2="674.00" y2="432" class="grid-line grid-line-v"/><text x="674.00" y="460" class="axis-label axis-label-x">12,500</text><line x1="794.00" y1="28" x2="794.00" y2="432" class="grid-line grid-line-v"/><text x="794.00" y="460" class="axis-label axis-label-x">15,000</text>
-            <line x1="74" y1="432" x2="794" y2="432" class="grid-line"/>
-            <line x1="74" y1="28" x2="74" y2="432" class="grid-line"/>
-            
-            <g class="series" style="--series-color:#ea580c; --delay:0.00s">
-              <path d="M 74.00 46.36 L 98.00 288.06 L 122.00 293.93 L 146.00 312.08 L 170.00 346.53 L 194.00 373.80 L 218.00 392.32 L 242.00 403.12 L 266.00 404.27 L 290.00 402.69 L 314.00 404.96 L 338.00 406.60 L 362.00 406.64 L 386.00 407.94 L 410.00 407.14 L 434.00 409.72 L 458.00 411.15 L 482.00 411.18 L 506.00 413.49 L 530.00 412.80 L 554.00 413.10 L 578.00 413.64 L 602.00 412.37 L 626.00 411.57 L 650.00 412.87 L 674.00 411.05 L 698.00 411.62 L 722.00 410.88 L 746.00 411.50 L 770.00 411.11 L 794.00 409.56" class="series-line"/>
-              <circle cx="578.00" cy="413.64" r="6.4" class="best-ring"/>
-              <circle cx="578.00" cy="413.64" r="2.6" class="best-core"/>
-              <path d="M 794.00 409.56 L 812.00 409.56" class="label-link"/>
-            </g>
-            
-            <g class="series" style="--series-color:#7c3aed; --delay:0.08s">
-              <path d="M 74.00 46.36 L 98.00 301.96 L 122.00 349.99 L 146.00 375.66 L 170.00 390.80 L 194.00 399.46 L 218.00 404.07 L 242.00 407.62 L 266.00 408.37 L 290.00 408.82 L 314.00 410.82 L 338.00 410.55 L 362.00 409.84 L 386.00 409.48 L 410.00 408.88 L 434.00 410.09 L 458.00 409.94 L 482.00 410.28 L 506.00 410.80 L 530.00 409.09 L 554.00 408.81 L 578.00 407.89 L 602.00 406.80 L 626.00 405.67 L 650.00 406.15 L 674.00 406.12 L 698.00 404.83 L 722.00 405.37 L 746.00 405.62 L 770.00 405.05 L 794.00 402.61" class="series-line"/>
-              <circle cx="314.00" cy="410.82" r="6.4" class="best-ring"/>
-              <circle cx="314.00" cy="410.82" r="2.6" class="best-core"/>
-              <path d="M 794.00 402.61 L 812.00 427.56" class="label-link"/>
-            </g>
-            
-            <g class="series" style="--series-color:#9333ea; --delay:0.16s">
-              <path d="M 74.00 46.36 L 98.00 302.48 L 122.00 351.26 L 146.00 376.89 L 170.00 392.18 L 194.00 400.26 L 218.00 404.41 L 242.00 407.75 L 266.00 408.09 L 290.00 408.49 L 314.00 410.51 L 338.00 410.21 L 362.00 409.60 L 386.00 408.78 L 410.00 408.30 L 434.00 409.37 L 458.00 409.51 L 482.00 408.55 L 506.00 408.95 L 530.00 408.69 L 554.00 408.39 L 578.00 406.56 L 602.00 405.66 L 626.00 405.22 L 650.00 405.84 L 674.00 405.63 L 698.00 403.95 L 722.00 404.48 L 746.00 404.90 L 770.00 404.54 L 794.00 401.36" class="series-line"/>
-              <circle cx="314.00" cy="410.51" r="6.4" class="best-ring"/>
-              <circle cx="314.00" cy="410.51" r="2.6" class="best-core"/>
-              <path d="M 794.00 401.36 L 812.00 481.56" class="label-link"/>
-            </g>
-            
-            <g class="series" style="--series-color:#111827; --delay:0.24s">
-              <path d="M 74.00 46.36 L 98.00 351.33 L 122.00 379.96 L 146.00 391.66 L 170.00 400.48 L 194.00 403.93 L 218.00 407.14 L 242.00 408.91 L 266.00 408.99 L 290.00 408.74 L 314.00 409.68 L 338.00 409.93 L 362.00 410.06 L 386.00 408.25 L 410.00 408.32 L 434.00 409.11 L 458.00 409.86 L 482.00 408.70 L 506.00 408.40 L 530.00 407.11 L 554.00 407.55 L 578.00 406.82 L 602.00 404.95 L 626.00 404.75 L 650.00 404.31 L 674.00 405.34 L 698.00 401.73 L 722.00 403.56 L 746.00 403.50 L 770.00 402.21 L 794.00 400.01" class="series-line"/>
-              <circle cx="362.00" cy="410.06" r="6.4" class="best-ring"/>
-              <circle cx="362.00" cy="410.06" r="2.6" class="best-core"/>
-              <path d="M 794.00 400.01 L 812.00 499.56" class="label-link"/>
-            </g>
-            
-            <g class="series" style="--series-color:#2563eb; --delay:0.32s">
-              <path d="M 74.00 46.36 L 98.00 302.46 L 122.00 352.21 L 146.00 377.07 L 170.00 391.84 L 194.00 399.38 L 218.00 403.90 L 242.00 406.67 L 266.00 407.13 L 290.00 407.72 L 314.00 409.29 L 338.00 408.61 L 362.00 408.33 L 386.00 407.54 L 410.00 407.84 L 434.00 408.38 L 458.00 408.82 L 482.00 408.37 L 506.00 409.13 L 530.00 408.58 L 554.00 408.18 L 578.00 407.67 L 602.00 406.17 L 626.00 405.50 L 650.00 405.68 L 674.00 406.20 L 698.00 403.61 L 722.00 404.73 L 746.00 404.88 L 770.00 403.49 L 794.00 402.24" class="series-line"/>
-              <circle cx="314.00" cy="409.29" r="6.4" class="best-ring"/>
-              <circle cx="314.00" cy="409.29" r="2.6" class="best-core"/>
-              <path d="M 794.00 402.24 L 812.00 445.56" class="label-link"/>
-            </g>
-            
-            <g class="series" style="--series-color:#0f766e; --delay:0.40s">
-              <path d="M 74.00 46.36 L 98.00 302.46 L 122.00 352.21 L 146.00 377.08 L 170.00 391.84 L 194.00 399.38 L 218.00 403.90 L 242.00 406.67 L 266.00 407.12 L 290.00 407.72 L 314.00 409.27 L 338.00 408.57 L 362.00 408.31 L 386.00 407.52 L 410.00 407.80 L 434.00 408.34 L 458.00 408.83 L 482.00 408.28 L 506.00 409.11 L 530.00 408.54 L 554.00 408.13 L 578.00 407.64 L 602.00 406.04 L 626.00 405.42 L 650.00 405.57 L 674.00 406.12 L 698.00 403.40 L 722.00 404.43 L 746.00 404.62 L 770.00 403.33 L 794.00 401.85" class="series-line"/>
-              <circle cx="314.00" cy="409.27" r="6.4" class="best-ring"/>
-              <circle cx="314.00" cy="409.27" r="2.6" class="best-core"/>
-              <path d="M 794.00 401.85 L 812.00 463.56" class="label-link"/>
-            </g>
-            
-            <g class="series" style="--series-color:#dc2626; --delay:0.48s">
-              <path d="M 74.00 46.36 L 98.00 286.42 L 122.00 289.85 L 146.00 291.05 L 170.00 291.18 L 194.00 293.19 L 218.00 297.02 L 242.00 305.22 L 266.00 323.65 L 290.00 344.59 L 314.00 365.53 L 338.00 382.82 L 362.00 392.90 L 386.00 398.46 L 410.00 402.93 L 434.00 406.29 L 458.00 407.11 L 482.00 407.17 L 506.00 407.57 L 530.00 406.80 L 554.00 406.76 L 578.00 404.95 L 602.00 403.27 L 626.00 402.46 L 650.00 401.36 L 674.00 402.27 L 698.00 400.15 L 722.00 399.64 L 746.00 398.97 L 770.00 398.24 L 794.00 395.48" class="series-line"/>
-              <circle cx="506.00" cy="407.57" r="6.4" class="best-ring"/>
-              <circle cx="506.00" cy="407.57" r="2.6" class="best-core"/>
-              <path d="M 794.00 395.48 L 812.00 517.56" class="label-link"/>
-            </g>
-            
-          </svg>
-          <div class="endpoint-column">
-            
-            <div class="endpoint-tag" style="top:395.56px; color:#ea580c; border-color:#ea580c22; background:#ea580c10;">
-              <span class="endpoint-name">U-NorMuon</span>
-              <span class="endpoint-value">1.539</span>
-            </div>
-            
-            <div class="endpoint-tag" style="top:413.56px; color:#7c3aed; border-color:#7c3aed22; background:#7c3aed10;">
-              <span class="endpoint-name">Aurora</span>
-              <span class="endpoint-value">1.594</span>
-            </div>
-            
-            <div class="endpoint-tag" style="top:467.56px; color:#9333ea; border-color:#9333ea22; background:#9333ea10;">
-              <span class="endpoint-name">Riemann Aurora</span>
-              <span class="endpoint-value">1.604</span>
-            </div>
-            
-            <div class="endpoint-tag" style="top:485.56px; color:#111827; border-color:#11182722; background:#11182710;">
-              <span class="endpoint-name">AdamW</span>
-              <span class="endpoint-value">1.614</span>
-            </div>
-            
-            <div class="endpoint-tag" style="top:431.56px; color:#2563eb; border-color:#2563eb22; background:#2563eb10;">
-              <span class="endpoint-name">Torch Muon</span>
-              <span class="endpoint-value">1.597</span>
-            </div>
-            
-            <div class="endpoint-tag" style="top:449.56px; color:#0f766e; border-color:#0f766e22; background:#0f766e10;">
-              <span class="endpoint-name">MuonLike</span>
-              <span class="endpoint-value">1.600</span>
-            </div>
-            
-            <div class="endpoint-tag" style="top:503.56px; color:#dc2626; border-color:#dc262622; background:#dc262610;">
-              <span class="endpoint-name">NorMuon</span>
-              <span class="endpoint-value">1.650</span>
-            </div>
-            
+          <div class="read-pill">
+            <div class="read-label">next best gap</div>
+            <div class="read-value">0.022</div>
+            <div class="read-note">margin over Aurora</div>
           </div>
-          <div class="chart-axis-title x">training step</div>
-          <div class="chart-axis-title y">validation loss</div>
+          <div class="read-pill">
+            <div class="read-label">best final checkpoint</div>
+            <div class="read-value">U-NorMuon</div>
+            <div class="read-note">final val 1.539</div>
+          </div>
         </div>
       </div>
 
@@ -832,14 +773,22 @@
       <div class="panel">
         <div class="panel-title">
           <div>
-            <h2>static export</h2>
-            <div class="panel-strong-label">png snapshot</div>
+            <h2>artifact note</h2>
+            <div class="panel-strong-label">what to share</div>
           </div>
-          <div class="panel-note">shareable still</div>
+          <div class="panel-note">static only</div>
         </div>
-        <div class="snapshot">
-          <div class="snapshot-badge">static artifact</div>
-          <img src="loss_curves.png" alt="Static validation loss plot">
+        <div class="read-card" style="grid-template-columns:1fr;">
+          <div class="read-pill">
+            <div class="read-label">png</div>
+            <div class="read-value">loss_curves.png</div>
+            <div class="read-note">clean static chart, good for README and quick sharing.</div>
+          </div>
+          <div class="read-pill">
+            <div class="read-label">html</div>
+            <div class="read-value">loss_report.html</div>
+            <div class="read-note">same numbers with ranking, runtime, and checkpoint table.</div>
+          </div>
         </div>
       </div>
     </section>

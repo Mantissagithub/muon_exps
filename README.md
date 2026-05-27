@@ -54,7 +54,9 @@ just messing around with muon kernels, optimizer variants, and a couple of small
 - `artifacts/char_lm/summary.md`
   - compact final summary for the saved tinyshakespeare run.
 - `artifacts/char_lm/loss_curves.png`
-  - the nicer plot with direct labels plus best-loss and wall-time side panels.
+  - the static validation-loss plot with a late-run zoom inset.
+- `artifacts/char_lm/loss_report.html`
+  - the richer browser report for the same char-lm run.
 - `artifacts/mnist/results/`
   - the older mnist logs and loss-curve images.
 
@@ -107,32 +109,32 @@ what the extra metrics mean:
 - `alignment`
   - cosine-style alignment with the original gradient.
 
-current results:
+current readout:
 
-| shape | optimizer | ms/step | row cv | dead rows | ortho defect | alignment |
-|-------|-----------|--------:|-------:|----------:|-------------:|----------:|
-| 512×128 | muon | 0.422 | 0.496 | 0.195 | 0.385 | 0.913 |
-| 512×128 | aurora | 0.784 | 1.780 | 0.000 | 2.183 | 0.030 |
-| 512×128 | riemann_aurora | 7.555 | 0.048 | 0.000 | 1.468 | 0.876 |
-| 1024×256 | muon | 0.815 | 0.533 | 0.221 | 0.293 | 0.936 |
-| 1024×256 | aurora | 1.527 | 1.770 | 0.000 | 2.372 | 0.013 |
-| 1024×256 | riemann_aurora | 18.996 | 0.005 | 0.000 | 3.411 | 0.852 |
-| 2048×512 | muon | 2.379 | 0.494 | 0.196 | 0.278 | 0.944 |
-| 2048×512 | aurora | 4.590 | 1.900 | 0.000 | 2.544 | 0.016 |
-| 2048×512 | riemann_aurora | 59.331 | 0.031 | 0.000 | 2.445 | 0.874 |
-| 1024×1024 | muon | 4.720 | 0.107 | 0.000 | 0.419 | 0.825 |
-| 1024×1024 | aurora | 5.361 | 0.500 | 0.011 | 0.530 | 0.884 |
-| 1024×1024 | riemann_aurora | 5.359 | 0.500 | 0.011 | 0.530 | 0.884 |
-| 512×2048 | muon | 2.217 | 0.022 | 0.000 | 0.300 | 0.865 |
-| 512×2048 | aurora | 4.662 | 0.180 | 0.000 | 0.404 | 0.928 |
-| 512×2048 | riemann_aurora | 76.498 | 0.067 | 0.000 | 0.313 | 0.905 |
+| shape | speed winner | row winner | geometry winner | direction winner |
+|-------|--------------|------------|-----------------|------------------|
+| 512×128 | muon (0.41 ms) | riemann_aurora (cv 0.048) | normuon (0.383) | muon (0.913) |
+| 1024×256 | u_normuon (0.73 ms) | riemann_aurora (cv 0.005) | muon (0.293) | muon (0.936) |
+| 2048×512 | u_normuon (2.04 ms) | riemann_aurora (cv 0.031) | normuon (0.278) | muon (0.944) |
+| 1024×1024 | normuon (4.58 ms) | normuon (cv 0.107) | normuon (0.418) | aurora (0.884) |
+| 512×2048 | u_normuon (2.30 ms) | muon (cv 0.022) | normuon (0.297) | aurora (0.928) |
+
+scoreboard across the synthetic grid:
+
+| optimizer | total wins | where it wins |
+|-----------|-----------:|---------------|
+| u_normuon | 14 | 1024×1024:balance, 1024×1024:dead, 1024×1024:geometry, 1024×256:speed, 1024×256:direction, 2048×512:speed, 2048×512:geometry, 2048×512:direction, ... |
+| normuon | 12 | 1024×1024:speed, 1024×1024:balance, 1024×1024:dead, 1024×1024:geometry, 1024×256:direction, 2048×512:geometry, 2048×512:direction, 512×128:geometry, ... |
+| muon | 9 | 1024×1024:balance, 1024×1024:dead, 1024×256:geometry, 1024×256:direction, 2048×512:direction, 512×128:speed, 512×128:direction, 512×2048:balance, ... |
+| riemann_aurora | 8 | 1024×1024:direction, 1024×256:balance, 1024×256:dead, 2048×512:balance, 2048×512:dead, 512×128:balance, 512×128:dead, 512×2048:dead |
+| aurora | 6 | 1024×1024:direction, 1024×256:dead, 2048×512:dead, 512×128:dead, 512×2048:dead, 512×2048:direction |
 
 rough read:
 
-- `muon` is still the speed baseline and usually keeps the best gradient alignment.
-- `normuon` / `u_normuon` are basically tiny perturbations of `muon` in this synthetic setup, not a new regime.
-- `aurora` removes dead rows but gives up too much geometry and alignment here.
-- `riemann_aurora` is the cleanest on row balance, but it is still expensive enough that the grid had to be tightened for the laptop.
+- `u_normuon` and `normuon` now win the most cells overall on this tightened laptop-sized grid.
+- `muon` is still the clean speed/alignment baseline, and it keeps the best direction score on most rectangular cases.
+- `riemann_aurora` still dominates row balance, but it does that at a much higher runtime cost.
+- `aurora` only really stands out on a couple of direction/dead-row cells and does not look competitive as a general winner here.
 
 full table is in `benchmark_results.csv`, and `scripts/optimizer_variants_tui.py` renders it in a more readable way.
 
@@ -147,10 +149,10 @@ python experiments/char_lm/plot_results.py
 
 it writes results to `artifacts/char_lm/`. `torch_muon` is skipped automatically if the active torch build does not expose `torch.optim.Muon`.
 
-default run right now:
+current checked-in run:
 
-- `6000` train steps
-- eval every `250` steps
+- `15000` train steps
+- eval every `500` steps
 - `40` eval batches each time
 - `3` layers, `4` heads, `128` hidden dim
 - `64` batch size
@@ -160,13 +162,13 @@ current saved run from `artifacts/char_lm/summary.md`:
 
 | optimizer | best val | final val | wall time |
 |-----------|---------:|----------:|----------:|
-| adamw | 1.5348 | 1.5803 | 164.9s |
-| torch_muon | 1.5408 | 1.5695 | 176.5s |
-| muon_like | 1.5410 | 1.5703 | 219.5s |
-| normuon | 1.5545 | 1.6037 | 238.0s |
-| u_normuon | 1.5064 | 1.5125 | 237.9s |
-| aurora | 1.5288 | 1.5657 | 272.1s |
-| riemann_aurora | 1.5312 | 1.5682 | 625.5s |
+| adamw | 1.5348 | 1.6144 | 206.7s |
+| torch_muon | 1.5408 | 1.5968 | 221.0s |
+| muon_like | 1.5410 | 1.5998 | 274.5s |
+| normuon | 1.5545 | 1.6502 | 298.8s |
+| u_normuon | 1.5064 | 1.5387 | 296.3s |
+| aurora | 1.5288 | 1.5938 | 338.4s |
+| riemann_aurora | 1.5312 | 1.6037 | 770.6s |
 
 for this saved run:
 
@@ -174,4 +176,4 @@ for this saved run:
 - `adamw`, `torch_muon`, `muon_like`, `aurora`, and `riemann_aurora` are all in the same general band, but with different runtime costs.
 - `normuon` is clearly behind on this workload.
 
-`artifacts/char_lm/loss_curves.png` is the easiest way to read it quickly, since it shows the full validation trajectory plus the best-loss and wall-time rankings on the side.
+`artifacts/char_lm/loss_curves.png` is the quick read: one clean static curve with an inset for the late-run spread. `artifacts/char_lm/loss_report.html` keeps the fuller browser view.
