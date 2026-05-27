@@ -1,16 +1,18 @@
 # muon experiments
 
-just messing around with muon kernels, benchmark variants, and a couple of small training comparisons.
+just messing around with muon kernels, optimizer variants, and a couple of small training comparisons.
 
 ## layout
 
 ```text
 .
-├── cuda/                   # cuda kernels and benchmark driver
-├── scripts/                # tui + quick benchmark entrypoints
+├── cuda/                   # cuda kernels, variant implementations, benchmark drivers
+├── scripts/                # tui wrappers / quick benchmark entrypoints
 ├── experiments/
-│   └── mnist/              # small training comparisons
-├── artifacts/              # saved outputs / compiled benchmark binary
+│   ├── mnist/              # older small training comparisons
+│   └── char_lm/            # tinyshakespeare optimizer comparison
+├── optimizers/             # pytorch reference optimizer wrappers
+├── artifacts/              # saved outputs / compiled benchmark binaries
 └── README.md
 ```
 
@@ -26,17 +28,39 @@ just messing around with muon kernels, benchmark variants, and a couple of small
 - `python experiments/char_lm/train_optimizer_variants.py`
 - `python experiments/char_lm/plot_results.py`
 
-## notes
+## what's here
 
-- `cuda/benchmark.cu` is the main cuda benchmark driver.
-- `cuda/benchmark_optimizer_variants.cu` compares the optimizer update rules on synthetic anisotropic gradients.
-- `cuda/gns_muon.cu` has the gram newton-schulz experiments.
-- the current benchmark grid is tuned down for a 4060 laptop gpu so it does not take forever.
-- some gram-ns variants are still wip and not numerically stable yet.
+- `cuda/benchmark.cu`
+  - the older main cuda benchmark driver.
+- `cuda/benchmark_optimizer_variants.cu`
+  - compares `muon`, `normuon`, `u_normuon`, `aurora`, and `riemann_aurora` on synthetic anisotropic gradients.
+- `cuda/README.md`
+  - writes out the math for the cuda-side variants in latex.
+- `optimizers/muon_variants.py`
+  - pytorch reference wrappers used for the char-lm run.
+- the current synthetic benchmark grid is intentionally tighter because this repo is being run on a `RTX 4060 Laptop GPU`, and `riemann_aurora` gets expensive fast.
+- some gram-ns / polar restart paths are still wip and not numerically stable in this branch.
 
-## quick results
+## artifacts
 
-verify is still the same story: quintic matches v1, the polar / restart paths are still not stable in this branch.
+- `artifacts/bin/benchmark`
+  - compiled binary for the older gram-ns / muon kernel benchmark.
+- `artifacts/bin/benchmark_optimizer_variants`
+  - compiled binary for the synthetic optimizer-update benchmark.
+- `benchmark_results.csv`
+  - full csv output from `cuda/benchmark_optimizer_variants.cu`.
+- `artifacts/char_lm/results.csv`
+  - per-checkpoint train loss, val loss, tokens/sec, elapsed time, and running best val.
+- `artifacts/char_lm/summary.md`
+  - compact final summary for the saved tinyshakespeare run.
+- `artifacts/char_lm/loss_curves.png`
+  - the nicer plot with direct labels plus best-loss and wall-time side panels.
+- `artifacts/mnist/results/`
+  - the older mnist logs and loss-curve images.
+
+## cuda benchmark
+
+verify is still the same story: quintic matches v1, while the polar / restart paths are still not stable in this branch.
 
 | shape     | quintic | v1_ortho | quintic_ortho | polar_ortho | polar_restart_ortho | polar_restart_syrk_ortho | fp16_ortho |
 |-----------|---------|----------|---------------|-------------|---------------------|---------------------------|------------|
@@ -68,7 +92,22 @@ bench run for the table above:
 - `iters 1000`
 - `480.5s total`
 
-optimizer-variant benchmark on anisotropic synthetic gradients:
+## optimizer-update benchmark
+
+`cuda/benchmark_optimizer_variants.cu` does not train a model. it just compares the update rule itself on synthetic gradients with deliberately uneven row energy.
+
+what the extra metrics mean:
+
+- `row cv`
+  - lower means the update mass is spread more evenly across rows / neurons.
+- `dead rows`
+  - fraction of rows with almost no update.
+- `ortho defect`
+  - how far the final update drifts from the polar geometry.
+- `alignment`
+  - cosine-style alignment with the original gradient.
+
+current results:
 
 | shape | optimizer | ms/step | row cv | dead rows | ortho defect | alignment |
 |-------|-----------|--------:|-------:|----------:|-------------:|----------:|
@@ -88,7 +127,14 @@ optimizer-variant benchmark on anisotropic synthetic gradients:
 | 512×2048 | aurora | 4.662 | 0.180 | 0.000 | 0.404 | 0.928 |
 | 512×2048 | riemann_aurora | 76.498 | 0.067 | 0.000 | 0.313 | 0.905 |
 
-full table is in `benchmark_results.csv`. this grid is intentionally smaller now so riemann aurora is compared on shapes that can actually finish on the laptop.
+rough read:
+
+- `muon` is still the speed baseline and usually keeps the best gradient alignment.
+- `normuon` / `u_normuon` are basically tiny perturbations of `muon` in this synthetic setup, not a new regime.
+- `aurora` removes dead rows but gives up too much geometry and alignment here.
+- `riemann_aurora` is the cleanest on row balance, but it is still expensive enough that the grid had to be tightened for the laptop.
+
+full table is in `benchmark_results.csv`, and `scripts/optimizer_variants_tui.py` renders it in a more readable way.
 
 ## char lm training
 
@@ -99,4 +145,33 @@ python experiments/char_lm/train_optimizer_variants.py
 python experiments/char_lm/plot_results.py
 ```
 
-it writes results to `artifacts/char_lm/`. `torch_muon` is skipped automatically if the installed torch build does not expose `torch.optim.Muon`.
+it writes results to `artifacts/char_lm/`. `torch_muon` is skipped automatically if the active torch build does not expose `torch.optim.Muon`.
+
+default run right now:
+
+- `6000` train steps
+- eval every `250` steps
+- `40` eval batches each time
+- `3` layers, `4` heads, `128` hidden dim
+- `64` batch size
+- `128` token context
+
+current saved run from `artifacts/char_lm/summary.md`:
+
+| optimizer | best val | final val | wall time |
+|-----------|---------:|----------:|----------:|
+| adamw | 1.5348 | 1.5803 | 164.9s |
+| torch_muon | 1.5408 | 1.5695 | 176.5s |
+| muon_like | 1.5410 | 1.5703 | 219.5s |
+| normuon | 1.5545 | 1.6037 | 238.0s |
+| u_normuon | 1.5064 | 1.5125 | 237.9s |
+| aurora | 1.5288 | 1.5657 | 272.1s |
+| riemann_aurora | 1.5312 | 1.5682 | 625.5s |
+
+for this saved run:
+
+- `u_normuon` is the best validation result currently checked into the repo.
+- `adamw`, `torch_muon`, `muon_like`, `aurora`, and `riemann_aurora` are all in the same general band, but with different runtime costs.
+- `normuon` is clearly behind on this workload.
+
+`artifacts/char_lm/loss_curves.png` is the easiest way to read it quickly, since it shows the full validation trajectory plus the best-loss and wall-time rankings on the side.

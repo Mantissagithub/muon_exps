@@ -1,8 +1,9 @@
 # char lm optimizer results
 
-- `adamw`: best val 2.4172, final val 2.4172, 1.1s
-- `muon_like`: best val 2.5478, final val 2.5478, 1.7s
-- `normuon`: best val 2.6512, final val 2.6512, 1.9s
-- `u_normuon`: best val 2.6384, final val 2.6384, 1.8s
-- `aurora`: best val 2.5505, final val 2.5505, 2.4s
-- `riemann_aurora`: best val 2.5575, final val 2.5575, 8.0s
+- `adamw`: best val 1.5348, final val 1.5803, 164.9s
+- `torch_muon`: best val 1.5408, final val 1.5695, 176.5s
+- `muon_like`: best val 1.5410, final val 1.5703, 219.5s
+- `normuon`: best val 1.5545, final val 1.6037, 238.0s
+- `u_normuon`: best val 1.5064, final val 1.5125, 237.9s
+- `aurora`: best val 1.5288, final val 1.5657, 272.1s
+- `riemann_aurora`: best val 1.5312, final val 1.5682, 625.5s
