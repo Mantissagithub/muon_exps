@@ -23,6 +23,8 @@ just messing around with muon kernels, benchmark variants, and a couple of small
 - `uv run experiments/mnist/mnist_muon.py`
 - `uv run experiments/mnist/mnist_with_adam.py`
 - `uv run experiments/mnist/mnist_with_adamw.py`
+- `python experiments/char_lm/train_optimizer_variants.py`
+- `python experiments/char_lm/plot_results.py`
 
 ## notes
 
@@ -87,3 +89,14 @@ optimizer-variant benchmark on anisotropic synthetic gradients:
 | 512×2048 | riemann_aurora | 76.498 | 0.067 | 0.000 | 0.313 | 0.905 |
 
 full table is in `benchmark_results.csv`. this grid is intentionally smaller now so riemann aurora is compared on shapes that can actually finish on the laptop.
+
+## char lm training
+
+there is also a tiny character-lm comparison over TinyShakespeare:
+
+```bash
+python experiments/char_lm/train_optimizer_variants.py
+python experiments/char_lm/plot_results.py
+```
+
+it writes results to `artifacts/char_lm/`. `torch_muon` is skipped automatically if the installed torch build does not expose `torch.optim.Muon`.
