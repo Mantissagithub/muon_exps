@@ -13,10 +13,21 @@ if str(ROOT) not in sys.path:
 
 from experiments.char_lm.dataset import CharDataset, load_tinyshakespeare
 from experiments.char_lm.model import TinyCharTransformer
-from optimizers import Aurora, MuonLike, NorMuon, RiemannAurora, UNorMuon
+from optimizers import AMUSEMuon, Aurora, MuonLike, NorMuon, RiemannAurora, UNorMuon
 
 
-OPTIMIZERS = ["adamw", "torch_muon", "muon_like", "normuon", "u_normuon", "aurora", "riemann_aurora"]
+OPTIMIZERS = [
+    "adamw",
+    "torch_muon",
+    "muon_like",
+    "normuon",
+    "u_normuon",
+    "aurora",
+    "riemann_aurora",
+    "amuse_muon",
+    "sf_muon_fixed_beta_0.6",
+    "sf_muon_fixed_beta_0.9",
+]
 
 
 def parse_args():
@@ -33,6 +44,9 @@ def parse_args():
     p.add_argument("--dropout", type=float, default=0.0)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--weight-decay", type=float, default=0.1)
+    p.add_argument("--warmup-steps", type=int, default=100)
+    p.add_argument("--amuse-beta1", type=float, default=0.6)
+    p.add_argument("--amuse-rho", type=float, default=0.8)
     p.add_argument("--seed", type=int, default=1337)
     p.add_argument("--dataset", type=Path, default=ROOT / "data" / "tinyshakespeare" / "input.txt")
     p.add_argument("--out-dir", type=Path, default=ROOT / "artifacts" / "char_lm")
@@ -86,6 +100,56 @@ def make_optimizers(name: str, model: torch.nn.Module, lr: float, weight_decay: 
     return [opt for opt in [matrix_opt, other_opt] if opt is not None]
 
 
+def make_optimizer_stack(name: str, model: torch.nn.Module, args):
+    matrix_params, other_params = split_params(model)
+    if name == "amuse_muon":
+        return [
+            AMUSEMuon(
+                matrix_params,
+                other_params,
+                lr=args.lr,
+                weight_decay=args.weight_decay,
+                beta1=args.amuse_beta1,
+                rho=args.amuse_rho,
+                warmup_steps=args.warmup_steps,
+            )
+        ]
+    if name == "sf_muon_fixed_beta_0.6":
+        return [
+            AMUSEMuon(
+                matrix_params,
+                other_params,
+                lr=args.lr,
+                weight_decay=args.weight_decay,
+                beta1=0.6,
+                rho=args.amuse_rho,
+                warmup_steps=args.warmup_steps,
+                fixed_beta=0.6,
+            )
+        ]
+    if name == "sf_muon_fixed_beta_0.9":
+        return [
+            AMUSEMuon(
+                matrix_params,
+                other_params,
+                lr=args.lr,
+                weight_decay=args.weight_decay,
+                beta1=0.9,
+                rho=args.amuse_rho,
+                warmup_steps=args.warmup_steps,
+                fixed_beta=0.9,
+            )
+        ]
+    return make_optimizers(name, model, args.lr, args.weight_decay)
+
+
+def find_amuse(optimizers):
+    for opt in optimizers:
+        if isinstance(opt, AMUSEMuon):
+            return opt
+    return None
+
+
 @torch.no_grad()
 def estimate_loss(model, data, batch_size, device, eval_iters, seed):
     model.eval()
@@ -102,6 +166,19 @@ def estimate_loss(model, data, batch_size, device, eval_iters, seed):
     return out
 
 
+@torch.no_grad()
+def estimate_val_loss(model, data, batch_size, device, eval_iters, seed):
+    model.eval()
+    gen = torch.Generator().manual_seed(seed)
+    losses = torch.empty(eval_iters)
+    for k in range(eval_iters):
+        x, y = data.get_batch("val", batch_size, device, gen)
+        _, loss = model(x, y)
+        losses[k] = loss.item()
+    model.train()
+    return losses.mean().item()
+
+
 def run_one(name, base_state, data, args, device):
     set_seed(args.seed)
     model = TinyCharTransformer(
@@ -113,31 +190,52 @@ def run_one(name, base_state, data, args, device):
         dropout=args.dropout,
     ).to(device)
     model.load_state_dict(base_state)
-    optimizers = make_optimizers(name, model, args.lr, args.weight_decay)
+    optimizers = make_optimizer_stack(name, model, args)
+    amuse = find_amuse(optimizers)
+    if amuse is not None:
+        amuse.prepare_train_step()
     train_gen = torch.Generator().manual_seed(args.seed)
     rows = []
     best_val = float("inf")
     t0 = time.perf_counter()
     tokens_seen = 0
+    last_step_time = float("nan")
 
     for step in range(args.steps + 1):
         if step % args.eval_interval == 0 or step == args.steps:
+            val_loss_z = float("nan")
+            if amuse is not None:
+                amuse.use_x_params()
             losses = estimate_loss(model, data, args.batch_size, device, args.eval_iters, args.seed + step)
+            if amuse is not None:
+                amuse.use_z_params()
+                val_loss_z = estimate_val_loss(model, data, args.batch_size, device, args.eval_iters, args.seed + step + 10_000)
+                amuse.prepare_train_step()
             best_val = min(best_val, losses["val"])
             elapsed = time.perf_counter() - t0
+            metrics = amuse.metrics() if amuse is not None else {}
             rows.append({
                 "optimizer": name,
                 "step": step,
                 "train_loss": losses["train"],
                 "val_loss": losses["val"],
+                "val_loss_z": val_loss_z,
+                "beta_t": metrics.get("beta_t", float("nan")),
+                "lr": args.lr,
+                "step_time": last_step_time,
                 "tokens_per_sec": tokens_seen / max(elapsed, 1e-9),
                 "elapsed_s": elapsed,
                 "best_val_loss": best_val,
+                "update_cosine_similarity": metrics.get("update_cosine_similarity", float("nan")),
+                "z_x_distance": metrics.get("z_x_distance", float("nan")),
+                "y_x_distance": metrics.get("y_x_distance", float("nan")),
+                "y_z_distance": metrics.get("y_z_distance", float("nan")),
             })
             print(f"{name},{step},train={losses['train']:.4f},val={losses['val']:.4f},best={best_val:.4f}")
         if step == args.steps:
             break
 
+        step_start = time.perf_counter()
         x, y = data.get_batch("train", args.batch_size, device, train_gen)
         for opt in optimizers:
             opt.zero_grad(set_to_none=True)
@@ -148,6 +246,7 @@ def run_one(name, base_state, data, args, device):
         for opt in optimizers:
             opt.step()
         tokens_seen += args.batch_size * args.block_size
+        last_step_time = time.perf_counter() - step_start
 
     return rows
 
@@ -155,7 +254,23 @@ def run_one(name, base_state, data, args, device):
 def write_results(rows, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "results.csv"
-    fields = ["optimizer", "step", "train_loss", "val_loss", "tokens_per_sec", "elapsed_s", "best_val_loss"]
+    fields = [
+        "optimizer",
+        "step",
+        "train_loss",
+        "val_loss",
+        "val_loss_z",
+        "beta_t",
+        "lr",
+        "step_time",
+        "tokens_per_sec",
+        "elapsed_s",
+        "best_val_loss",
+        "update_cosine_similarity",
+        "z_x_distance",
+        "y_x_distance",
+        "y_z_distance",
+    ]
     with csv_path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()

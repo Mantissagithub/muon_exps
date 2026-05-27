@@ -481,13 +481,13 @@
       <div class="hero-stats">
         <div class="stat-card">
           <div class="stat-label">best validation</div>
-          <div class="stat-value">U-NorMuon</div>
-          <div class="stat-meta">1.506 at step 10,500</div>
+          <div class="stat-value">AdamW</div>
+          <div class="stat-meta">1.535 at step 6,000</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">margin to next</div>
-          <div class="stat-value">0.022</div>
-          <div class="stat-meta">Aurora</div>
+          <div class="stat-value">0.006</div>
+          <div class="stat-meta">Torch Muon</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">fastest wall time</div>
@@ -504,7 +504,7 @@
             <h2>static trajectory</h2>
             <div class="panel-strong-label">validation loss with late-run zoom</div>
           </div>
-          <div class="panel-note">15,000 steps · 7 optimizers</div>
+          <div class="panel-note">15,000 steps · 4 optimizers</div>
         </div>
         <div class="chart-frame">
           <img src="loss_curves.png" alt="Static validation loss plot" style="display:block;width:100%;height:auto;">
@@ -512,18 +512,18 @@
         <div class="read-card">
           <div class="read-pill">
             <div class="read-label">winner</div>
-            <div class="read-value">U-NorMuon · 1.506</div>
-            <div class="read-note">best validation at step 10,500</div>
+            <div class="read-value">AdamW · 1.535</div>
+            <div class="read-note">best validation at step 6,000</div>
           </div>
           <div class="read-pill">
             <div class="read-label">next best gap</div>
-            <div class="read-value">0.022</div>
-            <div class="read-note">margin over Aurora</div>
+            <div class="read-value">0.006</div>
+            <div class="read-note">margin over Torch Muon</div>
           </div>
           <div class="read-pill">
             <div class="read-label">best final checkpoint</div>
-            <div class="read-value">U-NorMuon</div>
-            <div class="read-note">final val 1.539</div>
+            <div class="read-value">AMUSE-Muon</div>
+            <div class="read-note">final val 1.582</div>
           </div>
         </div>
       </div>
@@ -538,39 +538,9 @@
             <div class="panel-note">lower is better</div>
           </div>
           
-            <div class="rank-row" style="--fill:1.0000; --rank-color:#ea580c;">
+            <div class="rank-row" style="--fill:1.0000; --rank-color:#111827;">
               <div class="rank-head">
                 <span class="rank-index">01</span>
-                <span class="rank-name">U-NorMuon</span>
-                <span class="rank-score">1.506</span>
-              </div>
-              <div class="rank-bar"><span></span></div>
-              <div class="rank-meta">best @ step 10,500</div>
-            </div>
-            
-            <div class="rank-row" style="--fill:0.6975; --rank-color:#7c3aed;">
-              <div class="rank-head">
-                <span class="rank-index">02</span>
-                <span class="rank-name">Aurora</span>
-                <span class="rank-score">1.529</span>
-              </div>
-              <div class="rank-bar"><span></span></div>
-              <div class="rank-meta">best @ step 5,000</div>
-            </div>
-            
-            <div class="rank-row" style="--fill:0.6650; --rank-color:#9333ea;">
-              <div class="rank-head">
-                <span class="rank-index">03</span>
-                <span class="rank-name">Riemann Aurora</span>
-                <span class="rank-score">1.531</span>
-              </div>
-              <div class="rank-bar"><span></span></div>
-              <div class="rank-meta">best @ step 5,000</div>
-            </div>
-            
-            <div class="rank-row" style="--fill:0.6167; --rank-color:#111827;">
-              <div class="rank-head">
-                <span class="rank-index">04</span>
                 <span class="rank-name">AdamW</span>
                 <span class="rank-score">1.535</span>
               </div>
@@ -578,9 +548,9 @@
               <div class="rank-meta">best @ step 6,000</div>
             </div>
             
-            <div class="rank-row" style="--fill:0.5345; --rank-color:#2563eb;">
+            <div class="rank-row" style="--fill:0.9168; --rank-color:#2563eb;">
               <div class="rank-head">
-                <span class="rank-index">05</span>
+                <span class="rank-index">02</span>
                 <span class="rank-name">Torch Muon</span>
                 <span class="rank-score">1.541</span>
               </div>
@@ -588,9 +558,9 @@
               <div class="rank-meta">best @ step 5,000</div>
             </div>
             
-            <div class="rank-row" style="--fill:0.5324; --rank-color:#0f766e;">
+            <div class="rank-row" style="--fill:0.9147; --rank-color:#0f766e;">
               <div class="rank-head">
-                <span class="rank-index">06</span>
+                <span class="rank-index">03</span>
                 <span class="rank-name">MuonLike</span>
                 <span class="rank-score">1.541</span>
               </div>
@@ -598,14 +568,14 @@
               <div class="rank-meta">best @ step 5,000</div>
             </div>
             
-            <div class="rank-row" style="--fill:0.3500; --rank-color:#dc2626;">
+            <div class="rank-row" style="--fill:0.3500; --rank-color:#0891b2;">
               <div class="rank-head">
-                <span class="rank-index">07</span>
-                <span class="rank-name">NorMuon</span>
-                <span class="rank-score">1.554</span>
+                <span class="rank-index">04</span>
+                <span class="rank-name">AMUSE-Muon</span>
+                <span class="rank-score">1.582</span>
               </div>
               <div class="rank-bar"><span></span></div>
-              <div class="rank-meta">best @ step 9,000</div>
+              <div class="rank-meta">best @ step 15,000</div>
             </div>
             
         </div>
@@ -619,7 +589,7 @@
             <div class="panel-note">same hardware path</div>
           </div>
           
-            <div class="time-row" style="--fill:0.2682; --rank-color:#111827; --delay:0.00s;">
+            <div class="time-row" style="--fill:0.6900; --rank-color:#111827; --delay:0.00s;">
               <div class="time-head">
                 <span class="time-name">AdamW</span>
                 <span class="time-score">3m 27s</span>
@@ -627,50 +597,26 @@
               <div class="time-bar"><span></span></div>
             </div>
             
-            <div class="time-row" style="--fill:0.2867; --rank-color:#2563eb; --delay:0.08s;">
+            <div class="time-row" style="--fill:0.7495; --rank-color:#2563eb; --delay:0.08s;">
               <div class="time-head">
                 <span class="time-name">Torch Muon</span>
-                <span class="time-score">3m 41s</span>
+                <span class="time-score">3m 44s</span>
               </div>
               <div class="time-bar"><span></span></div>
             </div>
             
-            <div class="time-row" style="--fill:0.3562; --rank-color:#0f766e; --delay:0.16s;">
+            <div class="time-row" style="--fill:0.9230; --rank-color:#0f766e; --delay:0.16s;">
               <div class="time-head">
                 <span class="time-name">MuonLike</span>
-                <span class="time-score">4m 35s</span>
+                <span class="time-score">4m 36s</span>
               </div>
               <div class="time-bar"><span></span></div>
             </div>
             
-            <div class="time-row" style="--fill:0.3846; --rank-color:#ea580c; --delay:0.24s;">
+            <div class="time-row" style="--fill:1.0000; --rank-color:#0891b2; --delay:0.24s;">
               <div class="time-head">
-                <span class="time-name">U-NorMuon</span>
-                <span class="time-score">4m 56s</span>
-              </div>
-              <div class="time-bar"><span></span></div>
-            </div>
-            
-            <div class="time-row" style="--fill:0.3877; --rank-color:#dc2626; --delay:0.32s;">
-              <div class="time-head">
-                <span class="time-name">NorMuon</span>
+                <span class="time-name">AMUSE-Muon</span>
                 <span class="time-score">4m 59s</span>
-              </div>
-              <div class="time-bar"><span></span></div>
-            </div>
-            
-            <div class="time-row" style="--fill:0.4392; --rank-color:#7c3aed; --delay:0.40s;">
-              <div class="time-head">
-                <span class="time-name">Aurora</span>
-                <span class="time-score">5m 38s</span>
-              </div>
-              <div class="time-bar"><span></span></div>
-            </div>
-            
-            <div class="time-row" style="--fill:1.0000; --rank-color:#9333ea; --delay:0.48s;">
-              <div class="time-head">
-                <span class="time-name">Riemann Aurora</span>
-                <span class="time-score">12m 51s</span>
               </div>
               <div class="time-bar"><span></span></div>
             </div>
@@ -703,39 +649,12 @@
             <tbody>
               
             <tr>
-              <td><span class="swatch" style="background:#ea580c"></span>U-NorMuon</td>
-              <td>1.506</td>
-              <td>1.539</td>
-              <td>10,500</td>
-              <td>4m 56s</td>
-              <td>414,654</td>
-            </tr>
-            
-            <tr>
-              <td><span class="swatch" style="background:#7c3aed"></span>Aurora</td>
-              <td>1.529</td>
-              <td>1.594</td>
-              <td>5,000</td>
-              <td>5m 38s</td>
-              <td>363,081</td>
-            </tr>
-            
-            <tr>
-              <td><span class="swatch" style="background:#9333ea"></span>Riemann Aurora</td>
-              <td>1.531</td>
-              <td>1.604</td>
-              <td>5,000</td>
-              <td>12m 51s</td>
-              <td>159,455</td>
-            </tr>
-            
-            <tr>
               <td><span class="swatch" style="background:#111827"></span>AdamW</td>
               <td>1.535</td>
               <td>1.614</td>
               <td>6,000</td>
               <td>3m 27s</td>
-              <td>594,541</td>
+              <td>594,848</td>
             </tr>
             
             <tr>
@@ -743,8 +662,8 @@
               <td>1.541</td>
               <td>1.597</td>
               <td>5,000</td>
-              <td>3m 41s</td>
-              <td>556,093</td>
+              <td>3m 44s</td>
+              <td>547,653</td>
             </tr>
             
             <tr>
@@ -752,17 +671,17 @@
               <td>1.541</td>
               <td>1.600</td>
               <td>5,000</td>
-              <td>4m 35s</td>
-              <td>447,622</td>
+              <td>4m 36s</td>
+              <td>444,729</td>
             </tr>
             
             <tr>
-              <td><span class="swatch" style="background:#dc2626"></span>NorMuon</td>
-              <td>1.554</td>
-              <td>1.650</td>
-              <td>9,000</td>
+              <td><span class="swatch" style="background:#0891b2"></span>AMUSE-Muon</td>
+              <td>1.582</td>
+              <td>1.582</td>
+              <td>15,000</td>
               <td>4m 59s</td>
-              <td>411,289</td>
+              <td>410,472</td>
             </tr>
             
             </tbody>

@@ -1,6 +1,7 @@
 import argparse
 import csv
 import html
+import math
 import os
 from pathlib import Path
 
@@ -16,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "artifacts" / "char_lm" / "results.csv"
 OUT = ROOT / "artifacts" / "char_lm" / "loss_curves.png"
 HTML_OUT = ROOT / "artifacts" / "char_lm" / "loss_report.html"
+BETA_OUT = ROOT / "artifacts" / "char_lm" / "beta_schedule.png"
+DISTANCE_OUT = ROOT / "artifacts" / "char_lm" / "amuse_distances.png"
+COSINE_OUT = ROOT / "artifacts" / "char_lm" / "update_cosine.png"
 
 DISPLAY_NAMES = {
     "adamw": "AdamW",
@@ -25,6 +29,9 @@ DISPLAY_NAMES = {
     "u_normuon": "U-NorMuon",
     "aurora": "Aurora",
     "riemann_aurora": "Riemann Aurora",
+    "amuse_muon": "AMUSE-Muon",
+    "sf_muon_fixed_beta_0.6": "SF-Muon beta=0.6",
+    "sf_muon_fixed_beta_0.9": "SF-Muon beta=0.9",
 }
 
 PALETTE = {
@@ -35,6 +42,9 @@ PALETTE = {
     "u_normuon": "#ea580c",
     "aurora": "#7c3aed",
     "riemann_aurora": "#9333ea",
+    "amuse_muon": "#0891b2",
+    "sf_muon_fixed_beta_0.6": "#65a30d",
+    "sf_muon_fixed_beta_0.9": "#c2410c",
 }
 
 
@@ -43,7 +53,17 @@ def parse_args():
     p.add_argument("--results", type=Path, default=RESULTS)
     p.add_argument("--out", type=Path, default=OUT)
     p.add_argument("--html-out", type=Path, default=HTML_OUT)
+    p.add_argument("--beta-out", type=Path, default=BETA_OUT)
+    p.add_argument("--distance-out", type=Path, default=DISTANCE_OUT)
+    p.add_argument("--cosine-out", type=Path, default=COSINE_OUT)
     return p.parse_args()
+
+
+def parse_float(row, key):
+    value = row.get(key, "")
+    if value in ("", None):
+        return float("nan")
+    return float(value)
 
 
 def load_results(path: Path):
@@ -57,9 +77,17 @@ def load_results(path: Path):
             "step": int(row["step"]),
             "train_loss": float(row["train_loss"]),
             "val_loss": float(row["val_loss"]),
+            "val_loss_z": parse_float(row, "val_loss_z"),
+            "beta_t": parse_float(row, "beta_t"),
+            "lr": parse_float(row, "lr"),
+            "step_time": parse_float(row, "step_time"),
             "tokens_per_sec": float(row["tokens_per_sec"]),
             "elapsed_s": float(row["elapsed_s"]),
             "best_val_loss": float(row["best_val_loss"]),
+            "update_cosine_similarity": parse_float(row, "update_cosine_similarity"),
+            "z_x_distance": parse_float(row, "z_x_distance"),
+            "y_x_distance": parse_float(row, "y_x_distance"),
+            "y_z_distance": parse_float(row, "y_z_distance"),
         }
         by_opt.setdefault(row["optimizer"], []).append(parsed)
 
@@ -1219,6 +1247,61 @@ def render_clean_png(args, summaries):
     plt.close(fig)
 
 
+def has_metric(summaries, key):
+    return any(math.isfinite(row.get(key, float("nan"))) for summary in summaries for row in summary["rows"])
+
+
+def render_metric_png(args, summaries, out_path, keys, title, ylabel):
+    if not any(has_metric(summaries, key) for key in keys):
+        return False
+
+    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
+    fig, ax = plt.subplots(figsize=(10.2, 4.8), dpi=180, facecolor="#ffffff")
+    ax.set_facecolor("#ffffff")
+    for spine in ax.spines.values():
+        spine.set_color("#e5e7eb")
+        spine.set_linewidth(1.0)
+    ax.grid(axis="y", color="#edf1f5", linewidth=0.75)
+    ax.grid(axis="x", color="#f5f7fa", linewidth=0.55)
+    ax.tick_params(colors="#a3acba", labelsize=8)
+    ax.set_xlabel("Training step", color="#8b95a7", fontsize=8, labelpad=10)
+    ax.set_ylabel(ylabel, color="#8b95a7", fontsize=8, labelpad=10)
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k" if x else "0k"))
+    ax.set_xlim(0, max_step)
+
+    labels = {
+        "beta_t": "beta_t",
+        "z_x_distance": "||z - x|| / ||x||",
+        "y_x_distance": "||y - x|| / ||x||",
+        "y_z_distance": "||y - z|| / ||z||",
+        "update_cosine_similarity": "cos(delta x_t, delta x_{t-1})",
+    }
+    line_idx = 0
+    for summary in summaries:
+        base_color = PALETTE.get(summary["optimizer"], "#334155")
+        for key in keys:
+            rows = [row for row in summary["rows"] if math.isfinite(row.get(key, float("nan")))]
+            if not rows:
+                continue
+            xs = [row["step"] for row in rows]
+            ys = [row[key] for row in rows]
+            label = f"{summary['label']} {labels.get(key, key)}" if len(keys) > 1 else summary["label"]
+            linestyle = ["-", "--", ":"][line_idx % 3] if len(keys) > 1 else "-"
+            ax.plot(xs, ys, color=base_color, linewidth=1.5, alpha=0.9, linestyle=linestyle, label=label)
+            line_idx += 1
+
+    legend = ax.legend(loc="best", frameon=False, fontsize=8)
+    for text in legend.get_texts():
+        text.set_color("#4b5563")
+
+    fig.text(0.075, 0.925, title, color="#111827", fontsize=14, fontweight="bold")
+    fig.subplots_adjust(left=0.075, right=0.98, top=0.84, bottom=0.18)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+    return True
+
+
 def main():
     args = parse_args()
     by_opt = load_results(args.results)
@@ -1228,8 +1311,31 @@ def main():
     summaries = summarize(by_opt)
     render_clean_png(args, summaries)
     render_html_report(args, summaries)
+    wrote_beta = render_metric_png(args, summaries, args.beta_out, ["beta_t"], "AMUSE beta schedule", "beta")
+    wrote_distance = render_metric_png(
+        args,
+        summaries,
+        args.distance_out,
+        ["z_x_distance", "y_x_distance", "y_z_distance"],
+        "AMUSE sequence distances",
+        "relative distance",
+    )
+    wrote_cosine = render_metric_png(
+        args,
+        summaries,
+        args.cosine_out,
+        ["update_cosine_similarity"],
+        "AMUSE x-update cosine similarity",
+        "cosine similarity",
+    )
     print(f"wrote {args.out}")
     print(f"wrote {args.html_out}")
+    if wrote_beta:
+        print(f"wrote {args.beta_out}")
+    if wrote_distance:
+        print(f"wrote {args.distance_out}")
+    if wrote_cosine:
+        print(f"wrote {args.cosine_out}")
 
 
 if __name__ == "__main__":

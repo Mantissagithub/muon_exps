@@ -3,7 +3,11 @@ import math
 import torch
 
 from polar import polar
-from riemann_aurora import _riemannian_balanced_polar
+
+try:
+    from riemann_aurora import _riemannian_balanced_polar
+except ModuleNotFoundError:
+    _riemannian_balanced_polar = None
 
 
 class _MatrixOptimizer(torch.optim.Optimizer):
@@ -179,6 +183,8 @@ class RiemannAurora(_MatrixOptimizer):
                 if update.size(0) == update.size(1):
                     update = polar(update, eps=group["eps"])
                 else:
+                    if _riemannian_balanced_polar is None:
+                        raise RuntimeError("riemann_aurora.py is required for non-square RiemannAurora updates")
                     update = _riemannian_balanced_polar(
                         update,
                         outer_steps=group["outer_steps"],
@@ -190,3 +196,179 @@ class RiemannAurora(_MatrixOptimizer):
                 update.mul_(math.sqrt(max(1.0, p.size(0) / p.size(1))))
                 self._apply_update(p, update.to(dtype=p.dtype), group["lr"], group["weight_decay"])
         return loss
+
+
+class AMUSEMuon:
+    """Schedule-free Muon wrapper for the TinyShakespeare benchmark.
+
+    Model parameters hold y_t during training, while this object keeps explicit
+    z_t and x_t copies. That is clearer for the first implementation, but it
+    costs two full parameter copies; a lower-memory version can reconstruct x_t
+    from y_t/z_t and store only one sequence plus optimizer state.
+    """
+
+    def __init__(
+        self,
+        matrix_params,
+        other_params,
+        lr=1e-3,
+        weight_decay=0.1,
+        mu=0.95,
+        nesterov=True,
+        eps=1e-7,
+        beta1=0.6,
+        rho=0.8,
+        warmup_steps=100,
+        fixed_beta=None,
+        fallback_betas=(0.9, 0.95),
+        fallback_eps=1e-8,
+    ):
+        self.matrix_params = list(matrix_params)
+        self.other_params = list(other_params)
+        self.params = self.matrix_params + self.other_params
+        self.matrix_ids = {id(p) for p in self.matrix_params}
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.mu = mu
+        self.nesterov = nesterov
+        self.eps = eps
+        self.beta1 = beta1
+        self.rho = rho
+        self.warmup_steps = max(1, int(warmup_steps))
+        self.fixed_beta = fixed_beta
+        self.fallback_beta1, self.fallback_beta2 = fallback_betas
+        self.fallback_eps = fallback_eps
+        self.step_idx = 0
+        self.last_beta = self.beta_t(0)
+        self.last_update_cosine = float("nan")
+        self._prev_delta_x = None
+
+        self.state = {}
+        for p in self.params:
+            self.state[p] = {
+                "z": p.detach().clone(),
+                "x": p.detach().clone(),
+            }
+            if id(p) in self.matrix_ids:
+                self.state[p]["momentum"] = torch.zeros_like(p)
+            else:
+                self.state[p]["exp_avg"] = torch.zeros_like(p)
+                self.state[p]["exp_avg_sq"] = torch.zeros_like(p)
+
+    def zero_grad(self, set_to_none=True):
+        for p in self.params:
+            p.grad = None if set_to_none else torch.zeros_like(p)
+
+    def beta_t(self, step_idx):
+        if self.fixed_beta is not None:
+            return float(self.fixed_beta)
+        t = step_idx + 1
+        if t <= self.warmup_steps:
+            return float(self.beta1)
+        beta = 1.0 - ((self.warmup_steps - 1.0) / max(t - 1.0, 1.0)) ** self.rho * (1.0 - self.beta1)
+        return float(min(max(beta, self.beta1), 1.0))
+
+    @torch.no_grad()
+    def prepare_train_step(self):
+        beta = self.beta_t(self.step_idx)
+        self.last_beta = beta
+        for p in self.params:
+            state = self.state[p]
+            p.copy_(state["z"])
+            p.lerp_(state["x"], beta)
+
+    @torch.no_grad()
+    def use_x_params(self):
+        for p in self.params:
+            p.copy_(self.state[p]["x"])
+
+    @torch.no_grad()
+    def use_z_params(self):
+        for p in self.params:
+            p.copy_(self.state[p]["z"])
+
+    @torch.no_grad()
+    def step(self):
+        delta_chunks = []
+        for p in self.matrix_params:
+            if p.grad is None:
+                continue
+            state = self.state[p]
+            z = state["z"]
+            grad = p.grad
+
+            z.mul_(1.0 - self.lr * self.weight_decay)
+            momentum = state["momentum"]
+            momentum.lerp_(grad, 1.0 - self.mu)
+            update = torch.lerp(grad, momentum, self.mu) if self.nesterov else momentum
+            update = polar(update, eps=self.eps)
+            update.mul_(math.sqrt(max(1.0, z.size(0) / z.size(1))))
+            z.add_(update, alpha=-self.lr)
+            delta_chunks.append(self._update_x(state, z))
+
+        for p in self.other_params:
+            if p.grad is None:
+                continue
+            state = self.state[p]
+            z = state["z"]
+            grad = p.grad
+
+            z.mul_(1.0 - self.lr * self.weight_decay)
+            exp_avg = state["exp_avg"]
+            exp_avg_sq = state["exp_avg_sq"]
+            exp_avg.mul_(self.fallback_beta1).add_(grad, alpha=1.0 - self.fallback_beta1)
+            exp_avg_sq.mul_(self.fallback_beta2).addcmul_(grad, grad, value=1.0 - self.fallback_beta2)
+
+            t = self.step_idx + 1
+            bias_correction1 = 1.0 - self.fallback_beta1**t
+            bias_correction2 = 1.0 - self.fallback_beta2**t
+            step_size = self.lr / bias_correction1
+            denom = exp_avg_sq.sqrt().div_(math.sqrt(bias_correction2)).add_(self.fallback_eps)
+            z.addcdiv_(exp_avg, denom, value=-step_size)
+            delta_chunks.append(self._update_x(state, z))
+
+        self.last_update_cosine = self._update_cosine(delta_chunks)
+        self.step_idx += 1
+        self.prepare_train_step()
+
+    def _update_x(self, state, z):
+        x = state["x"]
+        old_x = x.detach().clone()
+        c = 1.0 / (self.step_idx + 1.0)
+        x.lerp_(z, c)
+        return (x - old_x).detach().flatten().to(torch.float32)
+
+    def _update_cosine(self, delta_chunks):
+        if not delta_chunks:
+            return float("nan")
+        delta = torch.cat(delta_chunks)
+        if self._prev_delta_x is None:
+            self._prev_delta_x = delta.clone()
+            return float("nan")
+        denom = delta.norm() * self._prev_delta_x.norm()
+        cosine = float("nan") if denom.item() == 0.0 else torch.dot(delta, self._prev_delta_x).div(denom).item()
+        self._prev_delta_x = delta.clone()
+        return cosine
+
+    @torch.no_grad()
+    def metrics(self):
+        zx_num = zx_den = yx_num = yx_den = yz_num = yz_den = 0.0
+        beta = self.last_beta
+        for p in self.params:
+            state = self.state[p]
+            z = state["z"].to(torch.float32)
+            x = state["x"].to(torch.float32)
+            y = torch.lerp(z, x, beta)
+            zx_num += torch.sum((z - x).pow(2)).item()
+            zx_den += torch.sum(x.pow(2)).item()
+            yx_num += torch.sum((y - x).pow(2)).item()
+            yx_den += torch.sum(x.pow(2)).item()
+            yz_num += torch.sum((y - z).pow(2)).item()
+            yz_den += torch.sum(z.pow(2)).item()
+        return {
+            "beta_t": beta,
+            "update_cosine_similarity": self.last_update_cosine,
+            "z_x_distance": math.sqrt(zx_num) / max(math.sqrt(zx_den), 1e-12),
+            "y_x_distance": math.sqrt(yx_num) / max(math.sqrt(yx_den), 1e-12),
+            "y_z_distance": math.sqrt(yz_num) / max(math.sqrt(yz_den), 1e-12),
+        }
