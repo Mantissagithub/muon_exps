@@ -918,7 +918,7 @@ def render_gif_report(args, summaries):
         ha="right",
     )
 
-    ax_side.text(0.08, 0.95, "animated readout", fontsize=10, color="#8b6f47", fontweight="semibold")
+    ax_side.text(0.08, 0.95, "animated readout", fontsize=9.5, color="#8b6f47", fontweight="semibold")
     ax_side.text(0.08, 0.90, leader["label"], fontsize=24, color="#111827", fontweight="bold")
     side_best = ax_side.text(
         0.08,
@@ -944,7 +944,7 @@ def render_gif_report(args, summaries):
     point_artists = {}
     panel_value_artists = {}
     panel_delta_artists = {}
-    row_y_positions = [0.66 - i * 0.082 for i in range(len(summaries))]
+    row_y_positions = [0.66 - i * 0.094 for i in range(len(summaries))]
 
     for idx, summary in enumerate(summaries):
         color = PALETTE.get(summary["optimizer"], "#334155")
@@ -955,31 +955,31 @@ def render_gif_report(args, summaries):
 
         y = row_y_positions[idx]
         ax_side.add_patch(plt.Rectangle((0.08, y - 0.012), 0.022, 0.022, facecolor=color, edgecolor="none"))
-        ax_side.text(0.12, y, summary["label"], va="center", fontsize=11, color="#1f2937", fontweight="semibold")
+        ax_side.text(0.12, y, summary["label"], va="center", fontsize=10.4, color="#1f2937", fontweight="semibold")
         panel_value_artists[summary["optimizer"]] = ax_side.text(
             0.92,
             y,
             "....",
             ha="right",
             va="center",
-            fontsize=11,
+            fontsize=10.8,
             color=color,
             family="monospace",
             fontweight="semibold",
         )
         panel_delta_artists[summary["optimizer"]] = ax_side.text(
             0.92,
-            y - 0.025,
+            y - 0.032,
             "",
             ha="right",
             va="center",
-            fontsize=8.8,
+            fontsize=8.0,
             color="#7c7c7c",
             family="monospace",
         )
 
     total_points = max(len(summary["rows"]) for summary in summaries)
-    hold_frames = 16
+    hold_frames = 20
     total_frames = total_points + hold_frames
 
     def update(frame_idx):
@@ -1021,10 +1021,10 @@ def render_gif_report(args, summaries):
         )
         return artists
 
-    anim = FuncAnimation(fig, update, frames=total_frames, interval=120, blit=False)
+    anim = FuncAnimation(fig, update, frames=total_frames, interval=170, blit=False)
     args.gif_out.parent.mkdir(parents=True, exist_ok=True)
     fig.subplots_adjust(top=0.90, left=0.08, right=0.97, bottom=0.12)
-    anim.save(args.gif_out, writer=PillowWriter(fps=10))
+    anim.save(args.gif_out, writer=PillowWriter(fps=8))
     plt.close(fig)
 
 
