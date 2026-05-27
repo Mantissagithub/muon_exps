@@ -30,7 +30,7 @@ M_t = \mu M_{t-1} + (1-\mu)G_t
 $$
 
 $$
-U_t = \operatorname{polar}(M_t)
+ U_t = \mathrm{polar}(M_t)
 $$
 
 The CUDA code approximates the polar factor with 5 newton-schulz iterations. First:
@@ -124,7 +124,7 @@ Aurora tries to balance row leverage while staying close to a polar update.
 Given an update matrix \(G\), square matrices just use:
 
 $$
-U = \operatorname{polar}(G)
+ U = \mathrm{polar}(G)
 $$
 
 For rectangular matrices, wide matrices are transposed first so the working matrix is tall:
@@ -140,7 +140,7 @@ $$
 Initialize a row diagonal preconditioner:
 
 $$
-D_0 = \operatorname{diag}\left(\frac{1}{\lVert X_{1,:}\rVert_2},\ldots,\frac{1}{\lVert X_{N,:}\rVert_2}\right)
+ D_0 = \mathrm{diag}\left(\frac{1}{\lVert X_{1,:}\rVert_2},\ldots,\frac{1}{\lVert X_{N,:}\rVert_2}\right)
 $$
 
 The target row squared norm is:
@@ -152,7 +152,7 @@ $$
 Each preconditioning iteration does:
 
 $$
-U_k = \operatorname{polar}(D_kX)
+ U_k = \mathrm{polar}(D_kX)
 $$
 
 and updates the diagonal:
@@ -192,7 +192,7 @@ $$
 The implementation starts from:
 
 $$
-U_0 = \operatorname{polar}(G)
+ U_0 = \mathrm{polar}(G)
 $$
 
 For each outer step, compute the stiefel correction:
@@ -210,7 +210,7 @@ $$
 with the mean removed:
 
 $$
-q \leftarrow q - \operatorname{mean}(q)
+ q \leftarrow q - \mathrm{mean}(q)
 $$
 
 The row multipliers \(\lambda\) approximately solve:
@@ -230,13 +230,13 @@ The CUDA code uses conjugate gradient for this solve. It does not explicitly mat
 Then:
 
 $$
-S = B - U^\top\operatorname{diag}(\lambda)U
+ S = B - U^\top\mathrm{diag}(\lambda)U
 $$
 
 and the tangent direction is:
 
 $$
-Z = G - US - \operatorname{diag}(\lambda)U
+ Z = G - US - \mathrm{diag}(\lambda)U
 $$
 
 The ascent step is:
@@ -252,7 +252,7 @@ Y_{i,:} \leftarrow Y_{i,:}\frac{\sqrt{M/N}}{\lVert Y_{i,:}\rVert_2+\epsilon}
 $$
 
 $$
-Y \leftarrow \operatorname{polar}(Y)
+ Y \leftarrow \mathrm{polar}(Y)
 $$
 
 Finally, like the other aurora update:
@@ -290,13 +290,13 @@ $$
 The reported metrics are:
 
 $$
-\text{row cv} = \frac{\operatorname{std}_i(\lVert U_{i,:}\rVert_2)}{\operatorname{mean}_i(\lVert U_{i,:}\rVert_2)}
+ \text{row cv} = \frac{\mathrm{std}_i(\lVert U_{i,:}\rVert_2)}{\mathrm{mean}_i(\lVert U_{i,:}\rVert_2)}
 $$
 
 which tests update mass uniformity / neuron death risk.
 
 $$
-\text{dead row fraction} = \frac{\#\{i:\lVert U_{i,:}\rVert_2 < 0.01\operatorname{mean}_j\lVert U_{j,:}\rVert_2\}}{N}
+ \text{dead row fraction} = \frac{\#\{i:\lVert U_{i,:}\rVert_2 < 0.01\mathrm{mean}_j\lVert U_{j,:}\rVert_2\}}{N}
 $$
 
 which catches rows receiving almost no update.
