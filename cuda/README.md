@@ -296,7 +296,7 @@ $$
 which tests update mass uniformity / neuron death risk.
 
 $$
- \text{dead row fraction} = \frac{\#\{i:\lVert U_{i,:}\rVert_2 < 0.01\mathrm{mean}_j\lVert U_{j,:}\rVert_2\}}{N}
+ \text{dead row fraction} = \frac{\left|\{i:\lVert U_{i,:}\rVert_2 < 0.01\mathrm{mean}_j\lVert U_{j,:}\rVert_2\}\right|}{N}
 $$
 
 which catches rows receiving almost no update.
