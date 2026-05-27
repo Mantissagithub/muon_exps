@@ -1,7 +1,16 @@
 # script to train a simple dense mlp on mnist dataset with the muon optimizer
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-from torch.optim import Muon, AdamW, Adam
+from torch.optim import Muon, AdamW
+
+ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = ROOT / "data"
+OUTPUT_DIR = ROOT / "artifacts" / "mnist" / "loss_curves"
+
+# Epoch 30/30, Loss: 0.0170
+# Test Accuracy: 97.48%
 
 class SimpleMLP(nn.Module):
   def __init__(self, lr=1e-3, weight_decay=0.1):
@@ -9,7 +18,7 @@ class SimpleMLP(nn.Module):
       self.fc1 = nn.Linear(28*28, 256)
       self.fc2 = nn.Linear(256, 128)
       self.fc3 = nn.Linear(128, 10)
-      self.optimizer = Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
+      self.optimizer = AdamW(self.parameters(), lr=lr, weight_decay=weight_decay)
       self.criterion = nn.CrossEntropyLoss()
 
   def forward(self, x):
@@ -37,14 +46,14 @@ if __name__ == "__main__":
     ])
 
     train_dataset = datasets.MNIST(
-        './data',
+        str(DATA_DIR),
         train=True,
         download=True,
         transform=transform
     )
 
     test_dataset = datasets.MNIST(
-        './data',
+        str(DATA_DIR),
         train=False,
         download=True,
         transform=transform
@@ -73,14 +82,12 @@ if __name__ == "__main__":
 
     # visualizing loss curve
     import matplotlib.pyplot as plt
-    import os
-
-    os.makedirs('results/loss_curves', exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     plt.plot(losses)
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
-    plt.title('Training Loss Curve with Adam Optimizer')
-    plt.savefig('results/loss_curves/mnist_muon_loss_curve_with_adam.png')
+    plt.title('Training Loss Curve with AdamW Optimizer')
+    plt.savefig(OUTPUT_DIR / 'mnist_muon_loss_curve_with_adamw.png')
     correct = 0
     with torch.no_grad():
         for data, target in test_loader:
@@ -90,4 +97,3 @@ if __name__ == "__main__":
             correct += pred.eq(target.view_as(pred)).sum().item()
     accuracy = 100. * correct / len(test_loader.dataset)
     print(f"Test Accuracy: {accuracy:.2f}%")
-

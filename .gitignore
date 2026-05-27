@@ -2,3 +2,5 @@
 /.vscode
 __pycache__/
 *.pyc
+/artifacts/bin/
+/data/

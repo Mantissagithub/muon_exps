@@ -11,9 +11,10 @@
 #include "muon.cu"
 #include "gns_muon.cu"
 
-// command to run: nvcc -o benchmark benchmark.cu -lcublas -arch=sm_89 && ./benchmark
-// emits machine-parseable lines so benchmark_tui.py can render a rich tui on top.
-// run via: uv run benchmark_tui.py
+// direct compile example:
+// nvcc -o artifacts/bin/benchmark cuda/benchmark.cu -lcublas -arch=sm_89 && ./artifacts/bin/benchmark
+// emits machine-parseable lines so scripts/benchmark_tui.py can render a rich tui on top.
+// run via: uv run scripts/benchmark_tui.py
 
 using namespace std;
 

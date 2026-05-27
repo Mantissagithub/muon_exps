@@ -1,5 +1,5 @@
-# run via: uv run benchmark_tui.py
-# compact rich tui wrapper for ./benchmark. grey + white only.
+# run via: uv run scripts/benchmark_tui.py
+# compact rich tui wrapper for artifacts/bin/benchmark. grey + white only.
 
 import os
 import shutil
@@ -16,8 +16,9 @@ from rich.table import Table
 from rich.text import Text
 
 
-HERE = Path(__file__).parent.resolve()
-BIN = HERE / "benchmark"
+ROOT = Path(__file__).resolve().parent.parent
+CUDA_DIR = ROOT / "cuda"
+BIN = ROOT / "artifacts" / "bin" / "benchmark"
 
 WHITE = "white"
 LIGHT = "grey85"
@@ -42,7 +43,18 @@ def ensure_binary(console: Console) -> None:
   if shutil.which("nvcc") is None:
     console.print(f"[{WHITE}]nvcc not on PATH — install CUDA toolkit[/]")
     sys.exit(1)
-  rc = subprocess.call(["nvcc", "-o", "benchmark", "benchmark.cu", "-lcublas", "-arch=sm_89"], cwd=str(HERE))
+  BIN.parent.mkdir(parents=True, exist_ok=True)
+  rc = subprocess.call(
+    [
+      "nvcc",
+      "-o",
+      str(BIN),
+      str(CUDA_DIR / "benchmark.cu"),
+      "-lcublas",
+      "-arch=sm_89",
+    ],
+    cwd=str(ROOT),
+  )
   if rc != 0 or not BIN.exists():
     console.print(f"[{WHITE}]compile failed[/]")
     sys.exit(1)
@@ -185,7 +197,7 @@ def main() -> int:
     stderr=subprocess.STDOUT,
     bufsize=1,
     text=True,
-    cwd=str(HERE),
+    cwd=str(ROOT),
     env={**os.environ, "PYTHONUNBUFFERED": "1"},
   )
 

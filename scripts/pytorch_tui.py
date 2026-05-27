@@ -1,4 +1,4 @@
-# run via: uv run pytorch_tui.py
+# run via: uv run scripts/pytorch_tui.py
 # compact rich tui for the pytorch muon baseline. grey + white only.
 
 import threading
@@ -13,8 +13,6 @@ from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
-
-HERE = Path(__file__).parent.resolve()
 
 WHITE = "white"
 LIGHT = "grey85"
