@@ -32,18 +32,34 @@ just messing around with muon kernels, benchmark variants, and a couple of small
 
 ## quick results
 
-square cases are still slower than pytorch / flash-muon:
+verify is still the same story: quintic matches v1, the polar / restart paths are still not stable in this branch.
 
-| size   | cuda muon | pytorch muon | flash-muon |
-|--------|-----------|--------------|------------|
-| 1024²  | 3.67 ms   | 1.05 ms      | ~1.0 ms    |
-| 2048²  | 17.88 ms  | 1.99 ms      | ~1.4 ms    |
-| 4096²  | 117.96 ms | 9.56 ms      | ~7.1 ms    |
+| shape     | quintic | v1_ortho | quintic_ortho | polar_ortho | polar_restart_ortho | polar_restart_syrk_ortho | fp16_ortho |
+|-----------|---------|----------|---------------|-------------|---------------------|---------------------------|------------|
+| 1024×1024 | ok      | ok       | ok            | fail        | fail                | fail                      | fail       |
+| 2048×2048 | ok      | ok       | ok            | fail        | fail                | fail                      | fail       |
+| 4096×1024 | ok      | ok       | ok            | fail        | fail                | fail                      | fail       |
+| 8192×2048 | ok      | ok       | ok            | fail        | fail                | fail                      | fail       |
 
-more rectangular shapes look better with the gram-ns variants:
+square cases are still slower than pytorch / flash-muon, and normuon is basically flat with v1 there:
 
-| shape     | v1 ns  | quintic | best speedup |
-|-----------|--------|---------|--------------|
-| 2048×1024 | 7.81   | 7.68    | 1.02x        |
-| 4096×1024 | 13.25  | 8.97    | 1.48x        |
-| 8192×1024 | 24.71  | 11.83   | 2.09x        |
+| size   | v1 ns   | normuon | pytorch muon | flash-muon |
+|--------|---------|----------|--------------|------------|
+| 1024²  | 4.62 ms | 4.57 ms  | 1.05 ms      | ~1.0 ms    |
+| 2048²  | 30.59 ms| 30.75 ms | 1.99 ms      | ~1.4 ms    |
+
+more rectangular shapes still favor the gram-ns variants, not normuon:
+
+| shape     | v1 ns | normuon | quintic | polar | +restart | +syrk | best speedup |
+|-----------|-------|----------|---------|-------|----------|-------|--------------|
+| 2048×1024 | 7.47  | 7.42     | 7.29    | 7.29  | 7.85     | 7.52  | 1.02x        |
+| 4096×1024 | 12.71 | 12.66    | 8.59    | 8.59  | 10.13    | 9.51  | 1.48x        |
+| 8192×1024 | 23.98 | 24.06    | 11.41   | 11.41 | 14.93    | 13.69 | 2.10x        |
+
+bench run for the table above:
+
+- `NVIDIA GeForce RTX 4060 Laptop GPU`
+- `cc 8.9`
+- `7.62 GiB`
+- `iters 1000`
+- `480.5s total`

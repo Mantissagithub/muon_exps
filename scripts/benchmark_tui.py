@@ -29,6 +29,7 @@ DIM = "grey35"
 # fp32 variant tags emitted by benchmark.cu, in display order
 GNS_VARIANTS = ["quintic", "polar", "polar_restart", "polar_restart_syrk"]
 HEADER_LABELS = {
+  "normuon": "NorMuon",
   "quintic": "Quintic",
   "polar": "Polar",
   "polar_restart": "+Restart",
@@ -120,6 +121,7 @@ def build_bench_table(s: State) -> Table:
   t.add_column("shape", style=LIGHT, no_wrap=True)
   t.add_column("ρ", style=MID, justify="right", width=4)
   t.add_column("v1 NS", justify="right", width=10)
+  t.add_column(HEADER_LABELS["normuon"], justify="right", width=10)
   for v in GNS_VARIANTS:
     t.add_column(HEADER_LABELS[v], justify="right", width=10)
   t.add_column("best", justify="right", width=10)
@@ -137,6 +139,7 @@ def build_bench_table(s: State) -> Table:
       return Text("—", style=DIM)
 
     cells.append(fmt("v1_ns"))
+    cells.append(fmt("normuon"))
     for v in GNS_VARIANTS:
       cells.append(fmt(v))
 
@@ -228,7 +231,7 @@ def main() -> int:
         state.total = int(parts[1])
       elif tag == "START" and len(parts) >= 5:
         idx, N, M, rho = int(parts[1]), int(parts[2]), int(parts[3]), float(parts[4])
-        row: dict = {"idx": idx, "N": N, "M": M, "rho": rho, "v1_ns": None}
+        row: dict = {"idx": idx, "N": N, "M": M, "rho": rho, "v1_ns": None, "normuon": None}
         for v in GNS_VARIANTS:
           row[v] = None
         state.rows.append(row)
@@ -240,7 +243,7 @@ def main() -> int:
           if r["idx"] == idx:
             r[variant] = ms
             break
-        order = ["v1_ns"] + GNS_VARIANTS
+        order = ["v1_ns", "normuon"] + GNS_VARIANTS
         if variant in order:
           i = order.index(variant)
           state.running_variant = order[i+1] if i+1 < len(order) else None

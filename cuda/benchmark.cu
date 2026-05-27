@@ -9,6 +9,7 @@
 #include <cuda_fp16.h>
 #include <cublas_v2.h>
 #include "muon.cu"
+#include "normuon.cu"
 #include "gns_muon.cu"
 
 // direct compile example:
@@ -43,6 +44,26 @@ float run_muon_step(int N, int M, int iterations){
 
   float ms; cudaEventElapsedTime(&ms, start, stop);
   cudaFree(d_W); cudaFree(d_G); cudaFree(d_Mom); cudaFree(d_U);
+  return ms / iterations;
+}
+
+float run_normuon_step(int N, int M, int iterations){
+  float *d_W, *d_G, *d_Mom, *d_U, *d_row_ema;
+  cudaMalloc(&d_W, N*M*4); cudaMalloc(&d_G, N*M*4);
+  cudaMalloc(&d_Mom, N*M*4); cudaMalloc(&d_U, N*M*4);
+  cudaMalloc(&d_row_ema, N*4);
+  cudaMemset(d_row_ema, 0, N*4);
+
+  normuon_step(d_W, d_G, d_Mom, d_U, d_row_ema, N, M, 1e-3, 0.1);  // warmup
+
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start); cudaEventCreate(&stop);
+  cudaEventRecord(start);
+  for(int i=0;i<iterations;i++) normuon_step(d_W, d_G, d_Mom, d_U, d_row_ema, N, M, 1e-3, 0.1);
+  cudaEventRecord(stop); cudaEventSynchronize(stop);
+
+  float ms; cudaEventElapsedTime(&ms, start, stop);
+  cudaFree(d_W); cudaFree(d_G); cudaFree(d_Mom); cudaFree(d_U); cudaFree(d_row_ema);
   return ms / iterations;
 }
 
@@ -262,6 +283,9 @@ int main() {
 
     float v1_ms = run_muon_step(N, M, iters);
     printf("TIME|%d|v1_ns|%.4f\n", idx, v1_ms); fflush(stdout);
+
+    float normuon_ms = run_normuon_step(N, M, iters);
+    printf("TIME|%d|normuon|%.4f\n", idx, normuon_ms); fflush(stdout);
 
     for(auto m : modes){
       float ms = run_gns_muon_step(N, M, iters, m);
