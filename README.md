@@ -131,35 +131,35 @@ scoreboard across the synthetic grid:
 | riemann_aurora | 8 | 1024×1024:direction, 1024×256:balance, 1024×256:dead, 2048×512:balance, 2048×512:dead, 512×128:balance, 512×128:dead, 512×2048:dead |
 | aurora | 6 | 1024×1024:direction, 1024×256:dead, 2048×512:dead, 512×128:dead, 512×2048:dead, 512×2048:direction |
 
-rough read:
+summary:
 
-- `u_normuon` and `normuon` now win the most cells overall on this tightened laptop-sized grid.
-- `muon` is still the clean speed/alignment baseline, and it keeps the best direction score on most rectangular cases.
-- `riemann_aurora` still dominates row balance, but it does that at a much higher runtime cost.
-- `aurora` only really stands out on a couple of direction/dead-row cells and does not look competitive as a general winner here.
+- `u_normuon` and `normuon` win the largest number of cells on this tightened laptop-scale grid.
+- `muon` remains the strongest speed and alignment baseline, and it keeps the best direction score on most rectangular cases.
+- `riemann_aurora` is still the strongest method on row-balance metrics, but it achieves that at a substantially higher runtime cost.
+- `aurora` improves a small number of direction and dead-row cases, but it does not look competitive as a general-purpose winner on this benchmark.
 
 full table is in `benchmark_results.csv`, and `scripts/optimizer_variants_tui.py` renders it in a more readable way.
 
 ## char lm training
 
-there is also a tiny character-lm comparison over TinyShakespeare:
+there is also a small character-level language-model comparison on TinyShakespeare:
 
 ```bash
 python experiments/char_lm/train_optimizer_variants.py
 python experiments/char_lm/plot_results.py
 ```
 
-by default it now writes the amuse-focused run you have been iterating on, but there are two different result surfaces worth keeping separate here.
+by default the current script writes the amuse-focused run, but it is useful to keep the result surfaces below conceptually separate.
 
-so there are three separate stories in this repo now:
+there are three distinct benchmark surfaces in this repo:
 
-- the synthetic optimizer-update benchmark above, where aurora and riemann-aurora are judged on raw update geometry rather than language-model validation loss
-- the older broad TinyShakespeare baseline run below, where aurora and riemann-aurora are part of a wider training comparison
+- the synthetic optimizer-update benchmark above, where aurora and riemann-aurora are evaluated on update geometry rather than language-model validation loss
+- the older broad TinyShakespeare baseline run below, where aurora and riemann-aurora participate in a wider training comparison
 - the later amuse follow-up run, which is the narrower schedule-free / amuse-specific comparison
 
 ### broad baseline run
 
-this is the older wider comparison that still includes `aurora` and `riemann_aurora`.
+this is the earlier wider comparison that still includes `aurora` and `riemann_aurora`.
 
 it writes results to `artifacts/char_lm/`. `torch_muon` is skipped automatically if the active torch build does not expose `torch.optim.Muon`.
 
@@ -184,19 +184,19 @@ current saved run from `artifacts/char_lm/summary.md`:
 | aurora | 1.5288 | 1.5938 | 338.4s |
 | riemann_aurora | 1.5312 | 1.6037 | 770.6s |
 
-for this saved run:
+summary:
 
-- `u_normuon` is the best validation result currently checked into the repo.
-- `adamw`, `torch_muon`, `muon_like`, `aurora`, and `riemann_aurora` are all in the same general band, but with different runtime costs.
+- `u_normuon` is the strongest validation result in this checked-in baseline run.
+- `adamw`, `torch_muon`, `muon_like`, `aurora`, and `riemann_aurora` occupy a similar loss band, but with materially different runtime costs.
 - `normuon` is clearly behind on this workload.
 
-`artifacts/char_lm/loss_curves.png` is the quick read: one clean static curve with an inset for the late-run spread. `artifacts/char_lm/loss_report.html` keeps the fuller browser view.
+`artifacts/char_lm/loss_curves.png` is the quickest way to inspect the run: it shows the full validation trajectory together with a late-run inset. `artifacts/char_lm/loss_report.html` keeps the fuller browser view.
 
 ![TinyShakespeare validation loss](artifacts/char_lm/loss_curves.png)
 
 ### amuse follow-up run
 
-this is the later amuse-specific pass:
+this is the later amuse-specific follow-up:
 
 ```bash
 uv run python experiments/char_lm/train_optimizer_variants.py \
@@ -225,18 +225,18 @@ current saved run from `artifacts/char_lm_amuse_fix/summary.md`:
 | sf_muon_fixed_beta_0.9 | 1.5077 | 1.6546 | 3000 | 465.4s |
 | torch_muon | 1.5408 | 1.5968 | 5000 | 220.6s |
 
-rough read:
+summary:
 
-- amuse gets the best peak validation in this sweep. the lowest number here is `1.4947`, reached by `amuse_muon`, and `amuse_muon_b0.4_r0.5` is the same config under an explicit ablation name.
-- that does not mean amuse is the best late-run optimizer in this setup. the best amuse configs bottom out around step `3000`, then drift upward for the rest of training.
-- `sf_adamw` is the cleaner late-run story here: it does not hit the same best single point, but it keeps improving much longer and finishes far better than the amuse variants.
-- `sf_muon_fixed_beta_0.6` lands in between: weaker peak than the best amuse run, but much better final stability.
+- amuse achieves the best peak validation in this sweep. the lowest value is `1.4947`, reached by `amuse_muon`; `amuse_muon_b0.4_r0.5` is the same configuration under an explicit ablation name.
+- that does not imply that amuse is the strongest late-run optimizer in this setup. the best amuse configurations reach their minimum around step `3000`, then drift upward over the remainder of training.
+- `sf_adamw` is the stronger late-run baseline here: it does not match the best single validation point, but it continues improving much longer and finishes substantially better than the amuse variants.
+- `sf_muon_fixed_beta_0.6` lies between those two behaviors: its peak is weaker than the best amuse run, but its final stability is noticeably better.
 
-so the plotting/readout split for this section should be:
+the most useful interpretation split for this section is:
 
-- if the question is "who got the best single validation number?", amuse wins.
-- if the question is "who stayed good deepest into the run?", `sf_adamw` looks better.
+- if the question is "which method reached the best single validation point?", amuse wins.
+- if the question is "which method maintained performance deepest into the run?", `sf_adamw` is stronger.
 
-`artifacts/char_lm_amuse_fix/loss_curves.png` is therefore not contradicting the logs. it is plotting the raw `val_x` trajectory over time, not a best-so-far curve, so the early amuse win and the later amuse drift both show up.
+`artifacts/char_lm_amuse_fix/loss_curves.png` is therefore consistent with the logs. it plots the raw `val_x` trajectory over time rather than a best-so-far curve, so both the early amuse win and the later amuse drift are visible in the same figure.
 
 ![TinyShakespeare AMUSE validation loss](artifacts/char_lm_amuse_fix/loss_curves.png)
