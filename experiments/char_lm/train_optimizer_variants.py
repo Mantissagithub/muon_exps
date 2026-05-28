@@ -360,8 +360,8 @@ def write_results(rows, out_dir: Path):
     lines = [
         "# char lm optimizer results",
         "",
-        "| optimizer | beta1 | rho | fixed_beta | best_val_loss | final_val_loss | step_of_best_val | wall_time | avg_update_cosine | final_zx_distance |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| optimizer | beta1 | rho | fixed_beta | best_val_loss | train_at_best | final_val_loss | final_train_loss | step_of_best_val | wall_time | avg_update_cosine | final_zx_distance |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for opt, opt_rows in sorted(by_opt.items()):
         last = opt_rows[-1]
@@ -375,7 +375,9 @@ def write_results(rows, out_dir: Path):
             f"{last['rho'] if math.isfinite(last['rho']) else ''} | "
             f"{last['fixed_beta'] if math.isfinite(last['fixed_beta']) else ''} | "
             f"{best_row['best_val_loss']:.4f} | "
+            f"{best_row['train_loss']:.4f} | "
             f"{last['val_loss']:.4f} | "
+            f"{last['train_loss']:.4f} | "
             f"{best_row['step']} | "
             f"{last['elapsed_s']:.1f}s | "
             f"{avg_cosine if math.isfinite(avg_cosine) else float('nan'):.6f} | "

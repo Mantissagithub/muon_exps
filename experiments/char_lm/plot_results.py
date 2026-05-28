@@ -65,6 +65,7 @@ def parse_args():
     parser.add_argument("--results", type=Path, default=RESULTS)
     parser.add_argument("--out-dir", type=Path)
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--train-out", type=Path)
     parser.add_argument("--html-out", type=Path)
     parser.add_argument("--beta-out", type=Path)
     parser.add_argument("--distance-out", type=Path)
@@ -73,6 +74,7 @@ def parse_args():
     args = parser.parse_args()
     out_dir = args.out_dir if args.out_dir is not None else args.results.parent
     args.out = args.out if args.out is not None else out_dir / "loss_curves.png"
+    args.train_out = args.train_out if args.train_out is not None else out_dir / "training_loss_curves.png"
     args.html_out = args.html_out if args.html_out is not None else out_dir / "loss_report.html"
     args.beta_out = args.beta_out if args.beta_out is not None else out_dir / "beta_schedule.png"
     args.distance_out = args.distance_out if args.distance_out is not None else out_dir / "amuse_distances.png"
@@ -143,7 +145,9 @@ def summarize(by_opt):
                 "rows": rows,
                 "best_idx": best_idx,
                 "best_step": best_row["step"],
+                "best_train": best_row["train_loss"],
                 "best_val": best_row["val_loss"],
+                "final_train": final_row["train_loss"],
                 "final_val": final_row["val_loss"],
                 "final_elapsed_s": final_row["elapsed_s"],
             }
@@ -272,6 +276,47 @@ def render_main_png(args, summaries):
     fig.subplots_adjust(left=0.09, right=0.985, top=0.88, bottom=0.16)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+
+
+def render_training_png(args, summaries):
+    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
+    losses = [row["train_loss"] for summary in summaries for row in summary["rows"]]
+    ymin = min(losses)
+    ymax = max(losses)
+    span = max(ymax - ymin, 1e-6)
+
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["DejaVu Serif", "Times New Roman", "Times"]})
+    fig = plt.figure(figsize=(8.6, 4.8), dpi=220, facecolor="white")
+    ax = fig.add_subplot(1, 1, 1)
+
+    style_axis(ax, "Training Loss")
+    ax.set_title("TinyShakespeare (char LM)", fontsize=12, pad=7)
+    ax.set_xlim(0, max_step)
+    ax.set_ylim(max(0.0, ymin - span * 0.04), ymax + span * 0.03)
+
+    ordered = sorted(summaries, key=lambda item: item["best_val"])
+    for idx, summary in enumerate(ordered):
+        color = PALETTE.get(summary["optimizer"], "#334155")
+        steps = [row["step"] for row in summary["rows"]]
+        vals = [row["train_loss"] for row in summary["rows"]]
+        ax.plot(
+            steps,
+            vals,
+            color=color,
+            linewidth=1.45 if idx == 0 else 1.15,
+            alpha=0.98 if idx == 0 else 0.92,
+            label=summary["label"],
+        )
+
+    legend = ax.legend(loc="upper right", frameon=True, fontsize=7, ncol=2)
+    legend.get_frame().set_edgecolor("#cccccc")
+    legend.get_frame().set_facecolor("white")
+    legend.get_frame().set_alpha(0.95)
+
+    fig.subplots_adjust(left=0.09, right=0.985, top=0.88, bottom=0.16)
+    args.train_out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(args.train_out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
     plt.close(fig)
 
 
@@ -454,6 +499,7 @@ def render_html_report(args, summaries):
     leader = summaries[0]
     runner_up = summaries[1] if len(summaries) > 1 else None
     image_name = html.escape(args.out.name)
+    train_image_name = html.escape(args.train_out.name)
     beta_name = html.escape(args.beta_out.name)
     distance_name = html.escape(args.distance_out.name)
     cosine_name = html.escape(args.cosine_out.name)
@@ -466,7 +512,9 @@ def render_html_report(args, summaries):
             <tr>
               <td>{html.escape(summary['label'])}</td>
               <td>{fmt_loss(summary['best_val'])}</td>
+              <td>{fmt_loss(summary['best_train'])}</td>
               <td>{fmt_loss(summary['final_val'])}</td>
+              <td>{fmt_loss(summary['final_train'])}</td>
               <td>{fmt_step(summary['best_step'])}</td>
               <td>{fmt_seconds(summary['final_elapsed_s'])}</td>
               <td>{int(final['tokens_per_sec']):,}</td>
@@ -600,12 +648,22 @@ def render_html_report(args, summaries):
       </div>
     </section>
 
+    <section class="figure">
+      <img src="{train_image_name}" alt="Training loss comparison">
+      <div class="caption">
+        <strong>Figure 2.</strong> Training loss against training step for the same optimizer runs.
+        This separates fit speed from validation behavior on the small TinyShakespeare split.
+      </div>
+    </section>
+
     <table>
       <thead>
         <tr>
           <th>Optimizer</th>
           <th>Best val</th>
+          <th>Train at best</th>
           <th>Final val</th>
+          <th>Final train</th>
           <th>Best step</th>
           <th>Wall time</th>
           <th>Tokens/sec</th>
@@ -619,15 +677,15 @@ def render_html_report(args, summaries):
     <section class="diag-grid">
       <div class="figure">
         <img src="{beta_name}" alt="AMUSE beta schedule">
-        <div class="caption"><strong>Figure 2.</strong> AMUSE beta schedule.</div>
+        <div class="caption"><strong>Figure 3.</strong> AMUSE beta schedule.</div>
       </div>
       <div class="figure">
         <img src="{distance_name}" alt="AMUSE sequence distances">
-        <div class="caption"><strong>Figure 3.</strong> Relative x/y/z sequence distances.</div>
+        <div class="caption"><strong>Figure 4.</strong> Relative x/y/z sequence distances.</div>
       </div>
       <div class="figure">
         <img src="{cosine_name}" alt="AMUSE update cosine similarity">
-        <div class="caption"><strong>Figure 4.</strong> Cosine similarity between successive AMUSE x-updates.</div>
+        <div class="caption"><strong>Figure 5.</strong> Cosine similarity between successive AMUSE x-updates.</div>
       </div>
     </section>
   </main>
@@ -646,12 +704,14 @@ def main():
 
     summaries = summarize(by_opt)
     render_main_png(args, summaries)
+    render_training_png(args, summaries)
     render_html_report(args, summaries)
     wrote_beta = render_beta_png(args, summaries)
     wrote_distance = render_distance_png(args, summaries)
     wrote_cosine = render_cosine_png(args, summaries)
     wrote_val_components = render_val_components_png(args, summaries)
     print(f"wrote {args.out}")
+    print(f"wrote {args.train_out}")
     print(f"wrote {args.html_out}")
     if wrote_beta:
         print(f"wrote {args.beta_out}")

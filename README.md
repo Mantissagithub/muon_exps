@@ -218,31 +218,38 @@ it writes results and plots to `artifacts/char_lm_amuse_fix/`.
 
 current saved run from `artifacts/char_lm_amuse_fix/summary.md`:
 
-| optimizer | best val | final val | best step | wall time |
-|-----------|---------:|----------:|----------:|----------:|
-| adamw | 1.5348 | 1.6144 | 6000 | 205.6s |
-| amuse_muon | 1.4947 | 1.7081 | 3000 | 462.1s |
-| amuse_muon_b0.4_r0.5 | 1.4947 | 1.7081 | 3000 | 477.0s |
-| amuse_muon_b0.4_r0.8 | 1.4951 | 1.8706 | 3000 | 483.6s |
-| amuse_muon_b0.6_r0.5 | 1.5035 | 1.7261 | 3000 | 480.7s |
-| amuse_muon_b0.6_r0.8 | 1.5057 | 1.8514 | 3000 | 467.3s |
-| sf_adamw | 1.5090 | 1.5199 | 14000 | 350.4s |
-| sf_muon_fixed_beta_0.6 | 1.5023 | 1.5643 | 3000 | 436.0s |
-| sf_muon_fixed_beta_0.9 | 1.5077 | 1.6546 | 3000 | 465.4s |
-| torch_muon | 1.5408 | 1.5968 | 5000 | 220.6s |
+| optimizer | best val | train at best | final val | final train | best step | wall time |
+|-----------|---------:|--------------:|----------:|------------:|----------:|----------:|
+| adamw | 1.5316 | 1.2772 | 1.8731 | 0.8882 | 3500 | 214.8s |
+| amuse_muon | 1.4947 | 1.1980 | 1.7081 | 0.8915 | 3000 | 462.1s |
+| amuse_muon_b0.4_r0.5 | 1.4947 | 1.1980 | 1.7081 | 0.8915 | 3000 | 477.0s |
+| amuse_muon_b0.4_r0.8 | 1.4951 | 1.1861 | 1.8706 | 0.8432 | 3000 | 483.6s |
+| amuse_muon_b0.6_r0.5 | 1.5035 | 1.1868 | 1.7261 | 0.9059 | 3000 | 480.7s |
+| amuse_muon_b0.6_r0.8 | 1.5057 | 1.1786 | 1.8514 | 0.8827 | 3000 | 467.3s |
+| sf_adamw | 1.5090 | 1.2158 | 1.5199 | 1.2000 | 14000 | 350.4s |
+| sf_muon_fixed_beta_0.6 | 1.5023 | 1.2020 | 1.5643 | 1.0314 | 3000 | 436.0s |
+| sf_muon_fixed_beta_0.9 | 1.5077 | 1.2021 | 1.6546 | 0.9846 | 3000 | 465.4s |
+| torch_muon | 1.5389 | 1.2812 | 1.6595 | 1.0214 | 3500 | 223.8s |
 
 summary:
 
-- AMUSE achieves the best peak validation in this sweep. the lowest value is `1.4947`, reached by `amuse_muon`; `amuse_muon_b0.4_r0.5` is the same configuration under an explicit ablation name.
-- that does not imply that AMUSE is the strongest late-run optimizer in this setup. the best AMUSE configurations reach their minimum around step `3000`, then drift upward over the remainder of training.
-- `sf_adamw` is the stronger late-run baseline here: it does not match the best single validation point, but it continues improving much longer and finishes substantially better than the AMUSE variants.
-- `sf_muon_fixed_beta_0.6` lies between those two behaviors: its peak is weaker than the best AMUSE run, but its final stability is noticeably better.
+- the plain `adamw` and `torch_muon` rows were replaced with tuned scheduled baselines from `experiments/char_lm/tune_baselines.py`; the AMUSE and schedule-free rows are the same AMUSE follow-up run.
+- tuned `adamw`: `lr=0.005`, `weight_decay=0.1`, `warmup=1500`, cosine decay to `0.1x`.
+- tuned `torch_muon`: matrix `lr=0.005`, fallback AdamW `lr=0.001`, `weight_decay=0.1`, `warmup=1500`, cosine decay to `0.1x`.
+- AMUSE still achieves the best peak validation in this sweep. the lowest value is `1.4947`, reached by `amuse_muon`; `amuse_muon_b0.4_r0.5` is the same configuration under an explicit ablation name.
+- the later validation increase is more likely overfitting than optimizer instability. TinyShakespeare is very small: with the repo defaults (`batch_size=64`, `block_size=128`), one token-equivalent epoch is about `122` steps. that makes `15000` steps roughly `122` epochs, and the best-validation point around `3000` steps is already about `24-25` epochs.
+- this is not unique to AMUSE. if any optimizer is trained much longer than needed on this dataset, validation loss can eventually increase while training loss keeps falling.
+- the useful reading is that AMUSE reaches its best validation earlier because it fits the data faster; after that, continued training exposes overfitting.
 
 the most useful interpretation split for this section is:
 
 - if the question is "which method reached the best single validation point?", AMUSE wins.
-- if the question is "which method maintained performance deepest into the run?", `sf_adamw` is stronger.
+- if the question is "which method maintained validation deepest into this overlong run?", `sf_adamw` is stronger.
+- if the question is "which method fits fastest before overfitting dominates?", AMUSE is the interesting result.
+- for a fair final-loss comparison, early stopping or a stronger long-horizon LR decay should be part of the protocol.
 
-`artifacts/char_lm_amuse_fix/loss_curves.png` is therefore consistent with the logs. it plots the raw `val_x` trajectory over time rather than a best-so-far curve, so both the early AMUSE win and the later AMUSE drift are visible in the same figure.
+`artifacts/char_lm_amuse_fix/loss_curves.png` plots the raw validation trajectory, not best-so-far validation. `artifacts/char_lm_amuse_fix/training_loss_curves.png` plots the matching training loss. read them together: validation shows the early generalization optimum, while training loss shows continued fitting after that point.
 
 ![TinyShakespeare AMUSE validation loss](artifacts/char_lm_amuse_fix/loss_curves.png)
+
+![TinyShakespeare AMUSE training loss](artifacts/char_lm_amuse_fix/training_loss_curves.png)
