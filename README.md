@@ -96,6 +96,8 @@ bench run for the table above:
 
 ## optimizer-update benchmark
 
+### synthetic aurora / riemann-aurora benchmark lineage
+
 `cuda/benchmark_optimizer_variants.cu` does not train a model. it just compares the update rule itself on synthetic gradients with deliberately uneven row energy.
 
 what the extra metrics mean:
@@ -147,6 +149,18 @@ python experiments/char_lm/train_optimizer_variants.py
 python experiments/char_lm/plot_results.py
 ```
 
+by default it now writes the amuse-focused run you have been iterating on, but there are two different result surfaces worth keeping separate here.
+
+so there are three separate stories in this repo now:
+
+- the synthetic optimizer-update benchmark above, where aurora and riemann-aurora are judged on raw update geometry rather than language-model validation loss
+- the older broad TinyShakespeare baseline run below, where aurora and riemann-aurora are part of a wider training comparison
+- the later amuse follow-up run, which is the narrower schedule-free / amuse-specific comparison
+
+### broad baseline run
+
+this is the older wider comparison that still includes `aurora` and `riemann_aurora`.
+
 it writes results to `artifacts/char_lm/`. `torch_muon` is skipped automatically if the active torch build does not expose `torch.optim.Muon`.
 
 current checked-in run:
@@ -179,3 +193,50 @@ for this saved run:
 `artifacts/char_lm/loss_curves.png` is the quick read: one clean static curve with an inset for the late-run spread. `artifacts/char_lm/loss_report.html` keeps the fuller browser view.
 
 ![TinyShakespeare validation loss](artifacts/char_lm/loss_curves.png)
+
+### amuse follow-up run
+
+this is the later amuse-specific pass:
+
+```bash
+uv run python experiments/char_lm/train_optimizer_variants.py \
+  --steps 15000 \
+  --eval-interval 500 \
+  --out-dir artifacts/char_lm_amuse_fix
+
+uv run python experiments/char_lm/plot_results.py \
+  --results artifacts/char_lm_amuse_fix/results.csv
+```
+
+it writes results and plots to `artifacts/char_lm_amuse_fix/`.
+
+current saved run from `artifacts/char_lm_amuse_fix/summary.md`:
+
+| optimizer | best val | final val | best step | wall time |
+|-----------|---------:|----------:|----------:|----------:|
+| adamw | 1.5348 | 1.6144 | 6000 | 205.6s |
+| amuse_muon | 1.4947 | 1.7081 | 3000 | 462.1s |
+| amuse_muon_b0.4_r0.5 | 1.4947 | 1.7081 | 3000 | 477.0s |
+| amuse_muon_b0.4_r0.8 | 1.4951 | 1.8706 | 3000 | 483.6s |
+| amuse_muon_b0.6_r0.5 | 1.5035 | 1.7261 | 3000 | 480.7s |
+| amuse_muon_b0.6_r0.8 | 1.5057 | 1.8514 | 3000 | 467.3s |
+| sf_adamw | 1.5090 | 1.5199 | 14000 | 350.4s |
+| sf_muon_fixed_beta_0.6 | 1.5023 | 1.5643 | 3000 | 436.0s |
+| sf_muon_fixed_beta_0.9 | 1.5077 | 1.6546 | 3000 | 465.4s |
+| torch_muon | 1.5408 | 1.5968 | 5000 | 220.6s |
+
+rough read:
+
+- amuse gets the best peak validation in this sweep. the lowest number here is `1.4947`, reached by `amuse_muon`, and `amuse_muon_b0.4_r0.5` is the same config under an explicit ablation name.
+- that does not mean amuse is the best late-run optimizer in this setup. the best amuse configs bottom out around step `3000`, then drift upward for the rest of training.
+- `sf_adamw` is the cleaner late-run story here: it does not hit the same best single point, but it keeps improving much longer and finishes far better than the amuse variants.
+- `sf_muon_fixed_beta_0.6` lands in between: weaker peak than the best amuse run, but much better final stability.
+
+so the plotting/readout split for this section should be:
+
+- if the question is "who got the best single validation number?", amuse wins.
+- if the question is "who stayed good deepest into the run?", `sf_adamw` looks better.
+
+`artifacts/char_lm_amuse_fix/loss_curves.png` is therefore not contradicting the logs. it is plotting the raw `val_x` trajectory over time, not a best-so-far curve, so the early amuse win and the later amuse drift both show up.
+
+![TinyShakespeare AMUSE validation loss](artifacts/char_lm_amuse_fix/loss_curves.png)

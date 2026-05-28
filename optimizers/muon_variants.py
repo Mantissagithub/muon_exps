@@ -284,6 +284,7 @@ class AMUSEMuon:
             return float(self.fixed_beta)
         if self.step_idx <= self.warmup_steps or self.c_t0 is None or self.c_t <= self.c_t0:
             return float(self.beta1)
+        # after warmup we grow beta from c_t0, not from raw step count
         beta = 1.0 - (self.c_t0 / self.c_t) ** self.rho * (1.0 - self.beta1)
         return float(min(max(beta, self.beta1), 1.0))
 
@@ -313,6 +314,7 @@ class AMUSEMuon:
     @torch.no_grad()
     def step(self):
         lr_sq = self.lr * self.lr
+        # x_t is the lr^2-weighted average of z_t updates
         next_c_t = self.c_t + lr_sq
         x_weight = 0.0 if next_c_t == 0.0 else lr_sq / next_c_t
 
@@ -325,6 +327,7 @@ class AMUSEMuon:
 
             z.mul_(1.0 - self.lr * self.weight_decay)
             exp_avg_sq = state["exp_avg_sq"]
+            # amuse matrix path does not use adam first moment, only the second moment
             exp_avg_sq.mul_(self.fallback_beta2).addcmul_(grad, grad, value=1.0 - self.fallback_beta2)
 
             t = self.step_idx + 1
@@ -333,6 +336,7 @@ class AMUSEMuon:
             update = grad / denom
             update = polar(update, eps=self.eps)
             update.mul_(math.sqrt(max(1.0, z.size(0) / z.size(1))))
+            # match the preconditioned grad rms before the muon step, same idea as d-muon
             target_rms = grad.div(denom).norm().item() / math.sqrt(grad.numel())
             update_rms = update.norm().item() / math.sqrt(update.numel())
             if update_rms > 0.0:
@@ -363,6 +367,7 @@ class AMUSEMuon:
 
         self.c_t = next_c_t
         if self.step_idx + 1 == self.warmup_steps and self.c_t0 is None:
+            # this is the c_T0 anchor we keep for beta growth after warmup
             self.c_t0 = self.c_t
 
         self.last_update_cosine = self._update_cosine()
@@ -508,6 +513,7 @@ class ScheduleFreeAdamW:
             return float(self.fixed_beta)
         if self.step_idx <= self.warmup_steps or self.c_t0 is None or self.c_t <= self.c_t0:
             return float(self.sf_beta1)
+        # same schedule-free beta rule here: anchor at c_t0 after warmup
         beta = 1.0 - (self.c_t0 / self.c_t) ** self.rho * (1.0 - self.sf_beta1)
         return float(min(max(beta, self.sf_beta1), 1.0))
 
@@ -537,6 +543,7 @@ class ScheduleFreeAdamW:
     @torch.no_grad()
     def step(self):
         lr_sq = self.lr * self.lr
+        # schedule-free averaging here also uses lr^2 weights
         next_c_t = self.c_t + lr_sq
         x_weight = 0.0 if next_c_t == 0.0 else lr_sq / next_c_t
 
@@ -563,6 +570,7 @@ class ScheduleFreeAdamW:
 
         self.c_t = next_c_t
         if self.step_idx + 1 == self.warmup_steps and self.c_t0 is None:
+            # freeze the warmup boundary in c-space, then grow beta from there
             self.c_t0 = self.c_t
 
         self.last_update_cosine = self._update_cosine()
