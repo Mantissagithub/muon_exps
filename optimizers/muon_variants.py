@@ -198,6 +198,16 @@ class RiemannAurora(_MatrixOptimizer):
         return loss
 
 
+def _as_named_entries(named_params):
+    entries = list(named_params)
+    entries.sort(key=lambda item: item[0])
+    return entries
+
+
+def _relative_norm(numer_sq, denom_sq, eps):
+    return math.sqrt(numer_sq) / max(math.sqrt(denom_sq), eps)
+
+
 class AMUSEMuon:
     """Schedule-free Muon wrapper for the TinyShakespeare benchmark.
 
@@ -209,8 +219,8 @@ class AMUSEMuon:
 
     def __init__(
         self,
-        matrix_params,
-        other_params,
+        matrix_named_params,
+        other_named_params,
         lr=1e-3,
         weight_decay=0.1,
         mu=0.95,
@@ -222,11 +232,13 @@ class AMUSEMuon:
         fixed_beta=None,
         fallback_betas=(0.9, 0.95),
         fallback_eps=1e-8,
+        debug_checks=False,
     ):
-        self.matrix_params = list(matrix_params)
-        self.other_params = list(other_params)
-        self.params = self.matrix_params + self.other_params
-        self.matrix_ids = {id(p) for p in self.matrix_params}
+        self.matrix_entries = _as_named_entries(matrix_named_params)
+        self.other_entries = _as_named_entries(other_named_params)
+        self.param_entries = self.matrix_entries + self.other_entries
+        self.matrix_ids = {id(param) for _, param in self.matrix_entries}
+        self.params = [param for _, param in self.param_entries]
         self.lr = lr
         self.weight_decay = weight_decay
         self.mu = mu
@@ -238,59 +250,73 @@ class AMUSEMuon:
         self.fixed_beta = fixed_beta
         self.fallback_beta1, self.fallback_beta2 = fallback_betas
         self.fallback_eps = fallback_eps
+        self.debug_checks = debug_checks
         self.step_idx = 0
-        self.last_beta = self.beta_t(0)
+        self.c_t = 0.0
+        self.c_t0 = None
+        self.last_beta = self.beta_t()
         self.last_update_cosine = float("nan")
-        self._prev_delta_x = None
+        self.last_reconstruction_error = float("nan")
+        self.last_raw_cosine = float("nan")
+        self._x_prev = None
+        self._x_prev_prev = None
 
         self.state = {}
-        for p in self.params:
+        for name, p in self.param_entries:
             self.state[p] = {
+                "name": name,
                 "z": p.detach().clone(),
                 "x": p.detach().clone(),
             }
             if id(p) in self.matrix_ids:
-                self.state[p]["momentum"] = torch.zeros_like(p)
+                self.state[p]["exp_avg_sq"] = torch.zeros_like(p)
             else:
                 self.state[p]["exp_avg"] = torch.zeros_like(p)
                 self.state[p]["exp_avg_sq"] = torch.zeros_like(p)
+        self._x_prev = self._flatten_x_snapshot()
 
     def zero_grad(self, set_to_none=True):
         for p in self.params:
             p.grad = None if set_to_none else torch.zeros_like(p)
 
-    def beta_t(self, step_idx):
+    def beta_t(self):
         if self.fixed_beta is not None:
             return float(self.fixed_beta)
-        t = step_idx + 1
-        if t <= self.warmup_steps:
+        if self.step_idx <= self.warmup_steps or self.c_t0 is None or self.c_t <= self.c_t0:
             return float(self.beta1)
-        beta = 1.0 - ((self.warmup_steps - 1.0) / max(t - 1.0, 1.0)) ** self.rho * (1.0 - self.beta1)
+        beta = 1.0 - (self.c_t0 / self.c_t) ** self.rho * (1.0 - self.beta1)
         return float(min(max(beta, self.beta1), 1.0))
 
     @torch.no_grad()
     def prepare_train_step(self):
-        beta = self.beta_t(self.step_idx)
+        beta = self.beta_t()
         self.last_beta = beta
-        for p in self.params:
+        for _, p in self.param_entries:
             state = self.state[p]
             p.copy_(state["z"])
             p.lerp_(state["x"], beta)
 
     @torch.no_grad()
     def use_x_params(self):
-        for p in self.params:
+        for _, p in self.param_entries:
             p.copy_(self.state[p]["x"])
 
     @torch.no_grad()
     def use_z_params(self):
-        for p in self.params:
+        for _, p in self.param_entries:
             p.copy_(self.state[p]["z"])
 
     @torch.no_grad()
+    def use_y_params(self):
+        self.prepare_train_step()
+
+    @torch.no_grad()
     def step(self):
-        delta_chunks = []
-        for p in self.matrix_params:
+        lr_sq = self.lr * self.lr
+        next_c_t = self.c_t + lr_sq
+        x_weight = 0.0 if next_c_t == 0.0 else lr_sq / next_c_t
+
+        for _, p in self.matrix_entries:
             if p.grad is None:
                 continue
             state = self.state[p]
@@ -298,15 +324,23 @@ class AMUSEMuon:
             grad = p.grad
 
             z.mul_(1.0 - self.lr * self.weight_decay)
-            momentum = state["momentum"]
-            momentum.lerp_(grad, 1.0 - self.mu)
-            update = torch.lerp(grad, momentum, self.mu) if self.nesterov else momentum
+            exp_avg_sq = state["exp_avg_sq"]
+            exp_avg_sq.mul_(self.fallback_beta2).addcmul_(grad, grad, value=1.0 - self.fallback_beta2)
+
+            t = self.step_idx + 1
+            bias_correction2 = 1.0 - self.fallback_beta2**t
+            denom = exp_avg_sq.sqrt().div_(math.sqrt(bias_correction2)).add_(self.fallback_eps)
+            update = grad / denom
             update = polar(update, eps=self.eps)
             update.mul_(math.sqrt(max(1.0, z.size(0) / z.size(1))))
+            target_rms = grad.div(denom).norm().item() / math.sqrt(grad.numel())
+            update_rms = update.norm().item() / math.sqrt(update.numel())
+            if update_rms > 0.0:
+                update.mul_(target_rms / update_rms)
             z.add_(update, alpha=-self.lr)
-            delta_chunks.append(self._update_x(state, z))
+            self._update_x(state, z, x_weight)
 
-        for p in self.other_params:
+        for _, p in self.other_entries:
             if p.grad is None:
                 continue
             state = self.state[p]
@@ -325,52 +359,93 @@ class AMUSEMuon:
             step_size = self.lr / bias_correction1
             denom = exp_avg_sq.sqrt().div_(math.sqrt(bias_correction2)).add_(self.fallback_eps)
             z.addcdiv_(exp_avg, denom, value=-step_size)
-            delta_chunks.append(self._update_x(state, z))
+            self._update_x(state, z, x_weight)
 
-        self.last_update_cosine = self._update_cosine(delta_chunks)
+        self.c_t = next_c_t
+        if self.step_idx + 1 == self.warmup_steps and self.c_t0 is None:
+            self.c_t0 = self.c_t
+
+        self.last_update_cosine = self._update_cosine()
         self.step_idx += 1
         self.prepare_train_step()
 
-    def _update_x(self, state, z):
+    def _update_x(self, state, z, x_weight):
         x = state["x"]
-        old_x = x.detach().clone()
-        c = 1.0 / (self.step_idx + 1.0)
-        x.lerp_(z, c)
-        return (x - old_x).detach().flatten().to(torch.float32)
+        x.lerp_(z, x_weight)
 
-    def _update_cosine(self, delta_chunks):
-        if not delta_chunks:
+    def _flatten_x_snapshot(self):
+        return torch.cat(
+            [self.state[param]["x"].detach().double().flatten().cpu() for _, param in self.param_entries]
+        )
+
+    def _update_cosine(self):
+        x_now = self._flatten_x_snapshot()
+        if self._x_prev is None:
+            self._x_prev = x_now
             return float("nan")
-        delta = torch.cat(delta_chunks)
-        if self._prev_delta_x is None:
-            self._prev_delta_x = delta.clone()
+        if self._x_prev_prev is None:
+            self._x_prev_prev = self._x_prev
+            self._x_prev = x_now
             return float("nan")
-        denom = delta.norm() * self._prev_delta_x.norm()
-        cosine = float("nan") if denom.item() == 0.0 else torch.dot(delta, self._prev_delta_x).div(denom).item()
-        self._prev_delta_x = delta.clone()
+
+        dx = x_now - self._x_prev
+        dx_prev = self._x_prev - self._x_prev_prev
+        denom = dx.norm() * dx_prev.norm()
+        if denom.item() < 1e-20:
+            raw_cosine = float("nan")
+            cosine = float("nan")
+        else:
+            raw_cosine = torch.dot(dx, dx_prev).div(denom).item()
+            if self.debug_checks and (raw_cosine > 1.0001 or raw_cosine < -1.0001):
+                print(
+                    f"[amuse warning] step={self.step_idx} raw_cosine={raw_cosine:.8f} "
+                    f"dx_norm={dx.norm().item():.3e} prev_dx_norm={dx_prev.norm().item():.3e}"
+                )
+            cosine = float(torch.clamp(torch.tensor(raw_cosine, dtype=torch.float64), -1.0, 1.0).item())
+
+        self.last_raw_cosine = raw_cosine
+        self._x_prev_prev = self._x_prev
+        self._x_prev = x_now
         return cosine
 
     @torch.no_grad()
     def metrics(self):
         zx_num = zx_den = yx_num = yx_den = yz_num = yz_den = 0.0
+        reconstruction_num = reconstruction_den = 0.0
         beta = self.last_beta
-        for p in self.params:
+        for _, p in self.param_entries:
             state = self.state[p]
-            z = state["z"].to(torch.float32)
-            x = state["x"].to(torch.float32)
+            z = state["z"].to(torch.float64)
+            x = state["x"].to(torch.float64)
             y = torch.lerp(z, x, beta)
-            zx_num += torch.sum((z - x).pow(2)).item()
+            model_y = p.detach().double()
+            zx_delta = z - x
+            yx_delta = y - x
+            yz_delta = y - z
+            zx_num += torch.sum(zx_delta.pow(2)).item()
             zx_den += torch.sum(x.pow(2)).item()
-            yx_num += torch.sum((y - x).pow(2)).item()
+            yx_num += torch.sum(yx_delta.pow(2)).item()
             yx_den += torch.sum(x.pow(2)).item()
-            yz_num += torch.sum((y - z).pow(2)).item()
+            yz_num += torch.sum(yz_delta.pow(2)).item()
             yz_den += torch.sum(z.pow(2)).item()
+            reconstruction_num += torch.sum((model_y - y).pow(2)).item()
+            reconstruction_den += torch.sum(model_y.pow(2)).item()
+
+        zx_distance = _relative_norm(zx_num, zx_den, 1e-12)
+        yx_distance = _relative_norm(yx_num, yx_den, 1e-12)
+        yz_distance = _relative_norm(yz_num, yz_den, 1e-12)
+        self.last_reconstruction_error = _relative_norm(reconstruction_num, reconstruction_den, 1e-12)
+        if self.debug_checks and self.last_reconstruction_error > 1e-8:
+            print(f"[amuse warning] step={self.step_idx} reconstruction_error={self.last_reconstruction_error:.3e}")
         return {
             "beta_t": beta,
             "update_cosine_similarity": self.last_update_cosine,
-            "z_x_distance": math.sqrt(zx_num) / max(math.sqrt(zx_den), 1e-12),
-            "y_x_distance": math.sqrt(yx_num) / max(math.sqrt(yx_den), 1e-12),
-            "y_z_distance": math.sqrt(yz_num) / max(math.sqrt(yz_den), 1e-12),
+            "z_x_distance": zx_distance,
+            "y_x_distance": yx_distance,
+            "y_z_distance": yz_distance,
+            "y_x_expected_distance": (1.0 - beta) * zx_distance,
+            "y_z_expected_distance": beta * _relative_norm(zx_num, yz_den, 1e-12),
+            "amuse_y_reconstruction_error": self.last_reconstruction_error,
         }
 
 
@@ -379,7 +454,7 @@ class ScheduleFreeAdamW:
 
     def __init__(
         self,
-        params,
+        named_params,
         lr=1e-3,
         weight_decay=0.1,
         beta1=0.9,
@@ -389,8 +464,10 @@ class ScheduleFreeAdamW:
         rho=0.8,
         warmup_steps=100,
         fixed_beta=None,
+        debug_checks=False,
     ):
-        self.params = list(params)
+        self.param_entries = _as_named_entries(named_params)
+        self.params = [param for _, param in self.param_entries]
         self.lr = lr
         self.weight_decay = weight_decay
         self.beta1 = beta1
@@ -400,53 +477,70 @@ class ScheduleFreeAdamW:
         self.rho = rho
         self.warmup_steps = max(1, int(warmup_steps))
         self.fixed_beta = fixed_beta
+        self.debug_checks = debug_checks
         self.step_idx = 0
-        self.last_beta = self.beta_t(0)
+        self.c_t = 0.0
+        self.c_t0 = None
+        self.last_beta = self.beta_t()
+        self.last_update_cosine = float("nan")
+        self.last_raw_cosine = float("nan")
+        self.last_reconstruction_error = float("nan")
+        self._x_prev = None
+        self._x_prev_prev = None
 
         self.state = {}
-        for p in self.params:
+        for name, p in self.param_entries:
             self.state[p] = {
+                "name": name,
                 "z": p.detach().clone(),
                 "x": p.detach().clone(),
                 "exp_avg": torch.zeros_like(p),
                 "exp_avg_sq": torch.zeros_like(p),
             }
+        self._x_prev = self._flatten_x_snapshot()
 
     def zero_grad(self, set_to_none=True):
         for p in self.params:
             p.grad = None if set_to_none else torch.zeros_like(p)
 
-    def beta_t(self, step_idx):
+    def beta_t(self):
         if self.fixed_beta is not None:
             return float(self.fixed_beta)
-        t = step_idx + 1
-        if t <= self.warmup_steps:
+        if self.step_idx <= self.warmup_steps or self.c_t0 is None or self.c_t <= self.c_t0:
             return float(self.sf_beta1)
-        beta = 1.0 - ((self.warmup_steps - 1.0) / max(t - 1.0, 1.0)) ** self.rho * (1.0 - self.sf_beta1)
+        beta = 1.0 - (self.c_t0 / self.c_t) ** self.rho * (1.0 - self.sf_beta1)
         return float(min(max(beta, self.sf_beta1), 1.0))
 
     @torch.no_grad()
     def prepare_train_step(self):
-        beta = self.beta_t(self.step_idx)
+        beta = self.beta_t()
         self.last_beta = beta
-        for p in self.params:
+        for _, p in self.param_entries:
             state = self.state[p]
             p.copy_(state["z"])
             p.lerp_(state["x"], beta)
 
     @torch.no_grad()
     def use_x_params(self):
-        for p in self.params:
+        for _, p in self.param_entries:
             p.copy_(self.state[p]["x"])
 
     @torch.no_grad()
     def use_z_params(self):
-        for p in self.params:
+        for _, p in self.param_entries:
             p.copy_(self.state[p]["z"])
 
     @torch.no_grad()
+    def use_y_params(self):
+        self.prepare_train_step()
+
+    @torch.no_grad()
     def step(self):
-        for p in self.params:
+        lr_sq = self.lr * self.lr
+        next_c_t = self.c_t + lr_sq
+        x_weight = 0.0 if next_c_t == 0.0 else lr_sq / next_c_t
+
+        for _, p in self.param_entries:
             if p.grad is None:
                 continue
             state = self.state[p]
@@ -465,32 +559,86 @@ class ScheduleFreeAdamW:
             step_size = self.lr / bias_correction1
             denom = exp_avg_sq.sqrt().div_(math.sqrt(bias_correction2)).add_(self.eps)
             z.addcdiv_(exp_avg, denom, value=-step_size)
+            state["x"].lerp_(z, x_weight)
 
-            c = 1.0 / (self.step_idx + 1.0)
-            state["x"].lerp_(z, c)
+        self.c_t = next_c_t
+        if self.step_idx + 1 == self.warmup_steps and self.c_t0 is None:
+            self.c_t0 = self.c_t
 
+        self.last_update_cosine = self._update_cosine()
         self.step_idx += 1
         self.prepare_train_step()
+
+    def _flatten_x_snapshot(self):
+        return torch.cat(
+            [self.state[param]["x"].detach().double().flatten().cpu() for _, param in self.param_entries]
+        )
+
+    def _update_cosine(self):
+        x_now = self._flatten_x_snapshot()
+        if self._x_prev is None:
+            self._x_prev = x_now
+            return float("nan")
+        if self._x_prev_prev is None:
+            self._x_prev_prev = self._x_prev
+            self._x_prev = x_now
+            return float("nan")
+
+        dx = x_now - self._x_prev
+        dx_prev = self._x_prev - self._x_prev_prev
+        denom = dx.norm() * dx_prev.norm()
+        if denom.item() < 1e-20:
+            raw_cosine = float("nan")
+            cosine = float("nan")
+        else:
+            raw_cosine = torch.dot(dx, dx_prev).div(denom).item()
+            if self.debug_checks and (raw_cosine > 1.0001 or raw_cosine < -1.0001):
+                print(
+                    f"[sf-adamw warning] step={self.step_idx} raw_cosine={raw_cosine:.8f} "
+                    f"dx_norm={dx.norm().item():.3e} prev_dx_norm={dx_prev.norm().item():.3e}"
+                )
+            cosine = float(torch.clamp(torch.tensor(raw_cosine, dtype=torch.float64), -1.0, 1.0).item())
+
+        self.last_raw_cosine = raw_cosine
+        self._x_prev_prev = self._x_prev
+        self._x_prev = x_now
+        return cosine
 
     @torch.no_grad()
     def metrics(self):
         zx_num = zx_den = yx_num = yx_den = yz_num = yz_den = 0.0
+        reconstruction_num = reconstruction_den = 0.0
         beta = self.last_beta
-        for p in self.params:
+        for _, p in self.param_entries:
             state = self.state[p]
-            z = state["z"].to(torch.float32)
-            x = state["x"].to(torch.float32)
+            z = state["z"].to(torch.float64)
+            x = state["x"].to(torch.float64)
             y = torch.lerp(z, x, beta)
-            zx_num += torch.sum((z - x).pow(2)).item()
+            model_y = p.detach().double()
+            zx_delta = z - x
+            yx_delta = y - x
+            yz_delta = y - z
+            zx_num += torch.sum(zx_delta.pow(2)).item()
             zx_den += torch.sum(x.pow(2)).item()
-            yx_num += torch.sum((y - x).pow(2)).item()
+            yx_num += torch.sum(yx_delta.pow(2)).item()
             yx_den += torch.sum(x.pow(2)).item()
-            yz_num += torch.sum((y - z).pow(2)).item()
+            yz_num += torch.sum(yz_delta.pow(2)).item()
             yz_den += torch.sum(z.pow(2)).item()
+            reconstruction_num += torch.sum((model_y - y).pow(2)).item()
+            reconstruction_den += torch.sum(model_y.pow(2)).item()
+        zx_distance = _relative_norm(zx_num, zx_den, 1e-12)
+        yx_distance = _relative_norm(yx_num, yx_den, 1e-12)
+        yz_distance = _relative_norm(yz_num, yz_den, 1e-12)
+        self.last_reconstruction_error = _relative_norm(reconstruction_num, reconstruction_den, 1e-12)
+        if self.debug_checks and self.last_reconstruction_error > 1e-8:
+            print(f"[sf-adamw warning] step={self.step_idx} reconstruction_error={self.last_reconstruction_error:.3e}")
         return {
             "beta_t": beta,
-            "update_cosine_similarity": float("nan"),
-            "z_x_distance": math.sqrt(zx_num) / max(math.sqrt(zx_den), 1e-12),
-            "y_x_distance": math.sqrt(yx_num) / max(math.sqrt(yx_den), 1e-12),
-            "y_z_distance": math.sqrt(yz_num) / max(math.sqrt(yz_den), 1e-12),
+            "update_cosine_similarity": self.last_update_cosine,
+            "z_x_distance": zx_distance,
+            "y_x_distance": yx_distance,
+            "y_z_distance": yz_distance,
+            "y_x_expected_distance": (1.0 - beta) * zx_distance,
+            "y_z_expected_distance": beta * _relative_norm(zx_num, yz_den, 1e-12),
+            "amuse_y_reconstruction_error": self.last_reconstruction_error,
         }

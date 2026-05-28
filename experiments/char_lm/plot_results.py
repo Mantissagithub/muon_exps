@@ -8,22 +8,16 @@ from pathlib import Path
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/muon_exps_matplotlib")
 
 import matplotlib.pyplot as plt
-from matplotlib import patches
 from matplotlib import ticker
 from matplotlib.gridspec import GridSpec
 
 
 ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "artifacts" / "char_lm" / "results.csv"
-OUT = ROOT / "artifacts" / "char_lm" / "loss_curves.png"
-HTML_OUT = ROOT / "artifacts" / "char_lm" / "loss_report.html"
-BETA_OUT = ROOT / "artifacts" / "char_lm" / "beta_schedule.png"
-DISTANCE_OUT = ROOT / "artifacts" / "char_lm" / "amuse_distances.png"
-COSINE_OUT = ROOT / "artifacts" / "char_lm" / "update_cosine.png"
 
 DISPLAY_NAMES = {
     "adamw": "AdamW",
-    "torch_muon": "Muon",
+    "torch_muon": "Torch Muon",
     "muon_like": "MuonLike",
     "normuon": "NorMuon",
     "u_normuon": "U-NorMuon",
@@ -44,18 +38,18 @@ DISPLAY_NAMES = {
 }
 
 PALETTE = {
-    "adamw": "#1f2937",
-    "torch_muon": "#2563eb",
-    "muon_like": "#0f766e",
-    "normuon": "#dc2626",
-    "u_normuon": "#c2410c",
-    "aurora": "#7c3aed",
-    "riemann_aurora": "#9333ea",
-    "adafactor": "#6b7280",
-    "sf_adamw": "#16a34a",
-    "amuse_muon": "#0f9d7a",
-    "sf_muon_fixed_beta_0.6": "#84a11d",
-    "sf_muon_fixed_beta_0.9": "#b45309",
+    "adamw": "#1f77b4",
+    "torch_muon": "#ff7f0e",
+    "muon_like": "#8c564b",
+    "normuon": "#9467bd",
+    "u_normuon": "#d62728",
+    "aurora": "#7f7f7f",
+    "riemann_aurora": "#17becf",
+    "adafactor": "#bcbd22",
+    "sf_adamw": "#2ca02c",
+    "amuse_muon": "#e41a1c",
+    "sf_muon_fixed_beta_0.6": "#4daf4a",
+    "sf_muon_fixed_beta_0.9": "#984ea3",
     "lion": "#ca8a04",
     "adopt": "#b91c1c",
     "prodigy": "#0891b2",
@@ -67,14 +61,26 @@ PALETTE = {
 
 
 def parse_args():
-    p = argparse.ArgumentParser()
-    p.add_argument("--results", type=Path, default=RESULTS)
-    p.add_argument("--out", type=Path, default=OUT)
-    p.add_argument("--html-out", type=Path, default=HTML_OUT)
-    p.add_argument("--beta-out", type=Path, default=BETA_OUT)
-    p.add_argument("--distance-out", type=Path, default=DISTANCE_OUT)
-    p.add_argument("--cosine-out", type=Path, default=COSINE_OUT)
-    return p.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--results", type=Path, default=RESULTS)
+    parser.add_argument("--out-dir", type=Path)
+    parser.add_argument("--out", type=Path)
+    parser.add_argument("--html-out", type=Path)
+    parser.add_argument("--beta-out", type=Path)
+    parser.add_argument("--distance-out", type=Path)
+    parser.add_argument("--cosine-out", type=Path)
+    parser.add_argument("--val-components-out", type=Path)
+    args = parser.parse_args()
+    out_dir = args.out_dir if args.out_dir is not None else args.results.parent
+    args.out = args.out if args.out is not None else out_dir / "loss_curves.png"
+    args.html_out = args.html_out if args.html_out is not None else out_dir / "loss_report.html"
+    args.beta_out = args.beta_out if args.beta_out is not None else out_dir / "beta_schedule.png"
+    args.distance_out = args.distance_out if args.distance_out is not None else out_dir / "amuse_distances.png"
+    args.cosine_out = args.cosine_out if args.cosine_out is not None else out_dir / "update_cosine.png"
+    args.val_components_out = (
+        args.val_components_out if args.val_components_out is not None else out_dir / "amuse_val_components.png"
+    )
+    return args
 
 
 def parse_float(row, key):
@@ -85,17 +91,22 @@ def parse_float(row, key):
 
 
 def load_results(path: Path):
-    with path.open() as f:
-        rows = list(csv.DictReader(f))
+    with path.open() as handle:
+        rows = list(csv.DictReader(handle))
 
     by_opt = {}
     for row in rows:
         parsed = {
             "optimizer": row["optimizer"],
+            "beta1": parse_float(row, "beta1"),
+            "rho": parse_float(row, "rho"),
+            "fixed_beta": parse_float(row, "fixed_beta"),
             "step": int(row["step"]),
             "train_loss": float(row["train_loss"]),
             "val_loss": float(row["val_loss"]),
+            "val_loss_x": parse_float(row, "val_loss_x"),
             "val_loss_z": parse_float(row, "val_loss_z"),
+            "val_loss_y": parse_float(row, "val_loss_y"),
             "beta_t": parse_float(row, "beta_t"),
             "lr": parse_float(row, "lr"),
             "step_time": parse_float(row, "step_time"),
@@ -106,8 +117,11 @@ def load_results(path: Path):
             "z_x_distance": parse_float(row, "z_x_distance"),
             "y_x_distance": parse_float(row, "y_x_distance"),
             "y_z_distance": parse_float(row, "y_z_distance"),
+            "y_x_expected_distance": parse_float(row, "y_x_expected_distance"),
+            "y_z_expected_distance": parse_float(row, "y_z_expected_distance"),
+            "amuse_y_reconstruction_error": parse_float(row, "amuse_y_reconstruction_error"),
         }
-        by_opt.setdefault(row["optimizer"], []).append(parsed)
+        by_opt.setdefault(parsed["optimizer"], []).append(parsed)
 
     for opt_rows in by_opt.values():
         opt_rows.sort(key=lambda row: row["step"])
@@ -116,42 +130,38 @@ def load_results(path: Path):
 
 def summarize(by_opt):
     summaries = []
-    for opt, rows in by_opt.items():
+    for optimizer, rows in by_opt.items():
         best_idx, best_row = min(enumerate(rows), key=lambda item: item[1]["val_loss"])
         final_row = rows[-1]
-        summaries.append({
-            "optimizer": opt,
-            "label": DISPLAY_NAMES.get(opt, opt),
-            "rows": rows,
-            "best_idx": best_idx,
-            "best_step": best_row["step"],
-            "best_val": best_row["val_loss"],
-            "final_val": final_row["val_loss"],
-            "final_elapsed_s": final_row["elapsed_s"],
-        })
+        summaries.append(
+            {
+                "optimizer": optimizer,
+                "label": DISPLAY_NAMES.get(optimizer, optimizer),
+                "beta1": final_row["beta1"],
+                "rho": final_row["rho"],
+                "fixed_beta": final_row["fixed_beta"],
+                "rows": rows,
+                "best_idx": best_idx,
+                "best_step": best_row["step"],
+                "best_val": best_row["val_loss"],
+                "final_val": final_row["val_loss"],
+                "final_elapsed_s": final_row["elapsed_s"],
+            }
+        )
     summaries.sort(key=lambda item: item["best_val"])
     return summaries
 
 
-def spread_positions(values, gap):
-    placed = []
-    for value in values:
-        if not placed:
-            placed.append(value)
-            continue
-        placed.append(max(value, placed[-1] + gap))
-
-    for idx in range(len(placed) - 2, -1, -1):
-        placed[idx] = min(placed[idx], placed[idx + 1] - gap)
-    return placed
-
-
-def fmt_step(value):
-    return f"{value:,}"
+def has_metric(summaries, key):
+    return any(math.isfinite(row.get(key, float("nan"))) for summary in summaries for row in summary["rows"])
 
 
 def fmt_loss(value):
     return f"{value:.3f}"
+
+
+def fmt_step(value):
+    return f"{value:,}"
 
 
 def fmt_seconds(value):
@@ -162,20 +172,282 @@ def fmt_seconds(value):
     return f"{value:.1f}s"
 
 
-def build_svg_path(rows, x0, y0, width, height, xmin, xmax, ymin, ymax):
-    coords = []
-    xr = max(xmax - xmin, 1e-9)
-    yr = max(ymax - ymin, 1e-9)
-    for row in rows:
-        x = x0 + width * ((row["step"] - xmin) / xr)
-        y = y0 + height * (1.0 - ((row["val_loss"] - ymin) / yr))
-        coords.append((x, y))
-    if not coords:
-        return "", []
-    parts = [f"M {coords[0][0]:.2f} {coords[0][1]:.2f}"]
-    for x, y in coords[1:]:
-        parts.append(f"L {x:.2f} {y:.2f}")
-    return " ".join(parts), coords
+def style_axis(ax, ylabel):
+    ax.set_facecolor("white")
+    for spine in ax.spines.values():
+        spine.set_color("#666666")
+        spine.set_linewidth(0.8)
+    ax.grid(True, color="#b0b0b0", linewidth=0.6, alpha=0.65)
+    ax.tick_params(colors="#222222", labelsize=8, width=0.6, length=3)
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k" if x else "0"))
+    ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.2f"))
+    ax.set_xlabel("Step", fontsize=9, color="#222222")
+    ax.set_ylabel(ylabel, fontsize=9, color="#222222")
+
+
+def focus_subset(summaries):
+    available = {summary["optimizer"]: summary for summary in summaries}
+    preferred = [
+        "adamw",
+        "torch_muon",
+        "muon_like",
+        "sf_muon_fixed_beta_0.6",
+        "sf_muon_fixed_beta_0.9",
+        "amuse_muon_b0.4_r0.5",
+        "amuse_muon_b0.4_r0.8",
+        "amuse_muon_b0.6_r0.5",
+        "amuse_muon_b0.6_r0.8",
+        "amuse_muon",
+    ]
+    focus = [available[name] for name in preferred if name in available]
+    if focus:
+        return focus
+    return summaries[: min(4, len(summaries))]
+
+
+def render_main_png(args, summaries):
+    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
+    losses = [row["val_loss"] for summary in summaries for row in summary["rows"]]
+    ymin = min(losses)
+    ymax = max(losses)
+    span = max(ymax - ymin, 1e-6)
+
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["DejaVu Serif", "Times New Roman", "Times"]})
+    fig = plt.figure(figsize=(8.6, 4.8), dpi=220, facecolor="white")
+    ax = fig.add_subplot(1, 1, 1)
+
+    style_axis(ax, "Validation Loss")
+    ax.set_title("TinyShakespeare (char LM)", fontsize=12, pad=7)
+    ax.set_xlim(0, max_step)
+    ax.set_ylim(max(0.0, ymin - span * 0.04), ymax + span * 0.03)
+
+    ordered = sorted(summaries, key=lambda item: item["best_val"])
+    for idx, summary in enumerate(ordered):
+        color = PALETTE.get(summary["optimizer"], "#334155")
+        steps = [row["step"] for row in summary["rows"]]
+        vals = [row["val_loss"] for row in summary["rows"]]
+        ax.plot(
+            steps,
+            vals,
+            color=color,
+            linewidth=1.45 if idx == 0 else 1.15,
+            alpha=0.98 if idx == 0 else 0.92,
+            label=summary["label"],
+        )
+
+    zoom_start = int(max_step * 0.72)
+    inset = ax.inset_axes([0.59, 0.17, 0.36, 0.32])
+    style_axis(inset, "")
+    inset.set_xlabel("")
+    inset.set_ylabel("")
+    inset.tick_params(labelsize=6)
+    inset.set_xlim(zoom_start, max_step)
+
+    zoom_vals = []
+    for idx, summary in enumerate(ordered):
+        color = PALETTE.get(summary["optimizer"], "#334155")
+        rows = [row for row in summary["rows"] if row["step"] >= zoom_start]
+        steps = [row["step"] for row in rows]
+        vals = [row["val_loss"] for row in rows]
+        zoom_vals.extend(vals)
+        inset.plot(
+            steps,
+            vals,
+            color=color,
+            linewidth=1.2 if idx == 0 else 0.95,
+            alpha=0.96,
+        )
+
+    if zoom_vals:
+        zmin = min(zoom_vals)
+        zmax = max(zoom_vals)
+        zspan = max(zmax - zmin, 1e-6)
+        inset.set_ylim(zmin - zspan * 0.08, zmax + zspan * 0.08)
+
+    legend = ax.legend(loc="upper right", frameon=True, fontsize=7, ncol=2)
+    legend.get_frame().set_edgecolor("#cccccc")
+    legend.get_frame().set_facecolor("white")
+    legend.get_frame().set_alpha(0.95)
+
+    fig.subplots_adjust(left=0.09, right=0.985, top=0.88, bottom=0.16)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(args.out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+
+
+def render_beta_png(args, summaries):
+    if not has_metric(summaries, "beta_t"):
+        return False
+
+    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["DejaVu Serif", "Times New Roman", "Times"]})
+    fig, ax = plt.subplots(figsize=(7.2, 3.2), dpi=220, facecolor="white")
+    style_axis(ax, "beta_t")
+    ax.set_xlim(0, max_step)
+    ax.set_ylim(0.0, 1.02)
+
+    for summary in summaries:
+        rows = [row for row in summary["rows"] if math.isfinite(row.get("beta_t", float("nan")))]
+        if not rows:
+            continue
+        xs = [row["step"] for row in rows]
+        ys = [row["beta_t"] for row in rows]
+        linestyle = "--" if math.isfinite(summary["fixed_beta"]) else "-"
+        ax.plot(xs, ys, color=PALETTE.get(summary["optimizer"], "#334155"), linewidth=1.25, linestyle=linestyle, label=summary["label"])
+
+    legend = ax.legend(loc="lower right", frameon=False, fontsize=7, handlelength=2.2)
+    for text in legend.get_texts():
+        text.set_color("#222222")
+    fig.text(0.09, 0.95, "AMUSE beta schedule", color="#111111", fontsize=9.8)
+    fig.subplots_adjust(left=0.09, right=0.985, top=0.84, bottom=0.22)
+    args.beta_out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(args.beta_out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+    return True
+
+
+def render_cosine_png(args, summaries):
+    if not has_metric(summaries, "update_cosine_similarity"):
+        return False
+
+    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["DejaVu Serif", "Times New Roman", "Times"]})
+    fig, ax = plt.subplots(figsize=(7.2, 3.2), dpi=220, facecolor="white")
+    style_axis(ax, "cosine similarity")
+    ax.set_xlim(0, max_step)
+    ax.set_ylim(-1.0, 1.0)
+
+    cosine_values = []
+    for summary in summaries:
+        rows = [row for row in summary["rows"] if math.isfinite(row.get("update_cosine_similarity", float("nan")))]
+        if not rows:
+            continue
+        xs = [row["step"] for row in rows]
+        ys = [max(-1.0, min(1.0, row["update_cosine_similarity"])) for row in rows]
+        cosine_values.extend(ys)
+        ax.plot(
+            xs,
+            ys,
+            color=PALETTE.get(summary["optimizer"], "#334155"),
+            linewidth=1.35,
+            marker="o",
+            markersize=2.6,
+            markeredgewidth=0.0,
+            label=summary["label"],
+        )
+
+    if cosine_values:
+        cmin = min(cosine_values)
+        cmax = max(cosine_values)
+        if cmin > 0.95:
+            ax.set_ylim(0.95, 1.001)
+        else:
+            pad = max((cmax - cmin) * 0.08, 0.01)
+            ax.set_ylim(max(-1.0, cmin - pad), min(1.0, cmax + pad))
+
+    legend = ax.legend(loc="best", frameon=False, fontsize=7, handlelength=2.2)
+    for text in legend.get_texts():
+        text.set_color("#222222")
+    fig.text(0.09, 0.95, "x-update cosine similarity", color="#111111", fontsize=9.8)
+    fig.subplots_adjust(left=0.09, right=0.985, top=0.84, bottom=0.22)
+    args.cosine_out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(args.cosine_out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+    return True
+
+
+def render_distance_png(args, summaries):
+    keys = [
+        ("z_x_distance", "||z - x|| / ||x||"),
+        ("y_x_distance", "||y - x|| / ||x||"),
+        ("y_z_distance", "||y - z|| / ||z||"),
+    ]
+    if not any(has_metric(summaries, key) for key, _ in keys):
+        return False
+
+    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["DejaVu Serif", "Times New Roman", "Times"]})
+    fig, axes = plt.subplots(3, 1, figsize=(7.2, 7.6), dpi=220, facecolor="white", sharex=True)
+
+    for ax, (key, label) in zip(axes, keys):
+        style_axis(ax, label)
+        ax.set_xlim(0, max_step)
+        for summary in summaries:
+            rows = [row for row in summary["rows"] if math.isfinite(row.get(key, float("nan")))]
+            if not rows:
+                continue
+            xs = [row["step"] for row in rows]
+            ys = [row[key] for row in rows]
+            ax.plot(xs, ys, color=PALETTE.get(summary["optimizer"], "#334155"), linewidth=1.15, label=summary["label"])
+            expected_key = {
+                "y_x_distance": "y_x_expected_distance",
+                "y_z_distance": "y_z_expected_distance",
+            }.get(key)
+            if expected_key is not None:
+                exp_rows = [row for row in rows if math.isfinite(row.get(expected_key, float("nan")))]
+                if exp_rows:
+                    ax.plot(
+                        [row["step"] for row in exp_rows],
+                        [row[expected_key] for row in exp_rows],
+                        color=PALETTE.get(summary["optimizer"], "#334155"),
+                        linewidth=0.9,
+                        linestyle="--",
+                        alpha=0.7,
+                    )
+        ax.legend(loc="best", frameon=False, fontsize=6, handlelength=2.0)
+
+    axes[-1].set_xlabel("Step", fontsize=9, color="#222222")
+    fig.text(0.09, 0.97, "AMUSE sequence distances", color="#111111", fontsize=9.8)
+    fig.subplots_adjust(left=0.12, right=0.985, top=0.93, bottom=0.08, hspace=0.28)
+    args.distance_out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(args.distance_out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+    return True
+
+
+def render_val_components_png(args, summaries):
+    component_summaries = [
+        summary for summary in summaries if any(math.isfinite(row.get("val_loss_y", float("nan"))) for row in summary["rows"])
+    ]
+    if not component_summaries:
+        return False
+
+    max_step = max(summary["rows"][-1]["step"] for summary in component_summaries)
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["DejaVu Serif", "Times New Roman", "Times"]})
+    fig, axes = plt.subplots(len(component_summaries), 1, figsize=(7.2, 2.4 * len(component_summaries)), dpi=220, facecolor="white", sharex=True)
+    if len(component_summaries) == 1:
+        axes = [axes]
+
+    components = [
+        ("val_loss_x", "x_t", "-"),
+        ("val_loss_y", "y_t", "--"),
+        ("val_loss_z", "z_t", ":"),
+    ]
+    for ax, summary in zip(axes, component_summaries):
+        style_axis(ax, "validation loss")
+        ax.set_xlim(0, max_step)
+        for key, label, linestyle in components:
+            rows = [row for row in summary["rows"] if math.isfinite(row.get(key, float("nan")))]
+            if not rows:
+                continue
+            ax.plot(
+                [row["step"] for row in rows],
+                [row[key] for row in rows],
+                color=PALETTE.get(summary["optimizer"], "#334155"),
+                linewidth=1.15,
+                linestyle=linestyle,
+                label=label,
+            )
+        ax.set_title(summary["label"], fontsize=9, pad=5)
+        ax.legend(loc="best", frameon=False, fontsize=7, handlelength=2.2)
+
+    axes[-1].set_xlabel("Step", fontsize=9, color="#222222")
+    fig.text(0.09, 0.97, "AMUSE validation components", color="#111111", fontsize=9.8)
+    fig.subplots_adjust(left=0.10, right=0.985, top=0.92, bottom=0.10, hspace=0.35)
+    args.val_components_out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(args.val_components_out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+    return True
 
 
 def render_html_report(args, summaries):
@@ -183,7 +455,7 @@ def render_html_report(args, summaries):
     runner_up = summaries[1] if len(summaries) > 1 else None
     image_name = html.escape(args.out.name)
     beta_name = html.escape(args.beta_out.name)
-    dist_name = html.escape(args.distance_out.name)
+    distance_name = html.escape(args.distance_out.name)
     cosine_name = html.escape(args.cosine_out.name)
 
     rows = []
@@ -230,20 +502,6 @@ def render_html_report(args, summaries):
       line-height: 1.5;
       margin-bottom: 18px;
     }}
-    .figure {{
-      margin: 18px 0 26px;
-    }}
-    .figure img {{
-      width: 100%;
-      display: block;
-      border: 1px solid #d5d5d5;
-    }}
-    .caption {{
-      margin-top: 8px;
-      font-size: 13px;
-      color: #333333;
-      line-height: 1.45;
-    }}
     .metrics {{
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -263,6 +521,20 @@ def render_html_report(args, summaries):
     .metric .v {{
       margin-top: 6px;
       font-size: 18px;
+    }}
+    .figure {{
+      margin: 18px 0 26px;
+    }}
+    .figure img {{
+      width: 100%;
+      display: block;
+      border: 1px solid #d5d5d5;
+    }}
+    .caption {{
+      margin-top: 8px;
+      font-size: 13px;
+      color: #333333;
+      line-height: 1.45;
     }}
     table {{
       width: 100%;
@@ -301,8 +573,8 @@ def render_html_report(args, summaries):
   <main>
     <h1>TinyShakespeare optimizer report</h1>
     <div class="deck">
-      Same initialization, same train/validation split, and same seed across all compared optimizers.
-      The main figure emphasizes validation-loss trajectories; auxiliary figures isolate the AMUSE schedule and sequence diagnostics.
+      Results rendered directly from <code>artifacts/char_lm/results.csv</code>.
+      The main figure compares validation loss across the optimizers present in that file.
     </div>
 
     <div class="metrics">
@@ -324,7 +596,7 @@ def render_html_report(args, summaries):
       <img src="{image_name}" alt="Validation loss comparison">
       <div class="caption">
         <strong>Figure 1.</strong> Validation loss against training step for the benchmarked optimizers.
-        The right panel zooms into the late-training region to expose the final spread between methods.
+        The left panel shows every optimizer present in the CSV; the right panel focuses on the main comparison set when available.
       </div>
     </section>
 
@@ -347,15 +619,15 @@ def render_html_report(args, summaries):
     <section class="diag-grid">
       <div class="figure">
         <img src="{beta_name}" alt="AMUSE beta schedule">
-        <div class="caption"><strong>Figure 2.</strong> The AMUSE schedule parameter $\\beta_t$ over training.</div>
+        <div class="caption"><strong>Figure 2.</strong> AMUSE beta schedule.</div>
       </div>
       <div class="figure">
-        <img src="{dist_name}" alt="AMUSE sequence distances">
-        <div class="caption"><strong>Figure 3.</strong> Relative distances between the x, y, and z AMUSE sequences.</div>
+        <img src="{distance_name}" alt="AMUSE sequence distances">
+        <div class="caption"><strong>Figure 3.</strong> Relative x/y/z sequence distances.</div>
       </div>
       <div class="figure">
         <img src="{cosine_name}" alt="AMUSE update cosine similarity">
-        <div class="caption"><strong>Figure 4.</strong> Cosine similarity between consecutive AMUSE x-sequence updates.</div>
+        <div class="caption"><strong>Figure 4.</strong> Cosine similarity between successive AMUSE x-updates.</div>
       </div>
     </section>
   </main>
@@ -366,386 +638,6 @@ def render_html_report(args, summaries):
     args.html_out.write_text(html_text, encoding="utf-8")
 
 
-def dashboard_bounds(summaries):
-    vals = [row["val_loss"] for summary in summaries for row in summary["rows"]]
-    ymin = min(vals)
-    ymax = max(vals)
-    span = max(ymax - ymin, 1e-6)
-    return ymin - span * 0.04, ymax + span * 0.08
-
-
-def add_card(ax, xy, width, height, edge="#223047", face="#07101e", lw=1.0, alpha=0.98):
-    card = patches.FancyBboxPatch(
-        xy,
-        width,
-        height,
-        boxstyle="round,pad=0.012",
-        transform=ax.transAxes,
-        linewidth=lw,
-        edgecolor=edge,
-        facecolor=face,
-        alpha=alpha,
-        clip_on=False,
-    )
-    ax.add_patch(card)
-    return card
-
-
-def dashboard_color(optimizer):
-    if optimizer == "adamw":
-        return "#e5e7eb"
-    return PALETTE.get(optimizer, "#94a3b8")
-
-
-def setup_dashboard_axes(fig):
-    fig.patch.set_facecolor("#050914")
-    ax_bg = fig.add_axes([0, 0, 1, 1])
-    ax_bg.set_axis_off()
-    ax_bg.set_facecolor("#050914")
-    ax_bg.add_patch(
-        patches.Rectangle((0, 0), 1, 1, transform=ax_bg.transAxes, facecolor="#050914", edgecolor="none")
-    )
-    ax_bg.add_patch(
-        patches.Circle((0.33, 0.80), 0.42, transform=ax_bg.transAxes, facecolor="#0b2b55", edgecolor="none", alpha=0.22)
-    )
-    ax_bg.add_patch(
-        patches.Circle((0.76, 0.18), 0.36, transform=ax_bg.transAxes, facecolor="#1c0f39", edgecolor="none", alpha=0.18)
-    )
-
-    ax_chart = fig.add_axes([0.055, 0.25, 0.665, 0.60])
-    ax_rank = fig.add_axes([0.735, 0.25, 0.235, 0.60])
-    ax_bottom = fig.add_axes([0.055, 0.055, 0.915, 0.13])
-    for ax in [ax_chart, ax_rank, ax_bottom]:
-        ax.set_facecolor("#07101e")
-        for spine in ax.spines.values():
-            spine.set_color("#223047")
-            spine.set_linewidth(1.0)
-    return ax_bg, ax_chart, ax_rank, ax_bottom
-
-
-def style_dashboard_chart(ax, summaries):
-    ymin, ymax = dashboard_bounds(summaries)
-    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
-    ax.set_xlim(0, max_step)
-    ax.set_ylim(ymin, ymax)
-    ax.grid(True, color="#1e2a3f", linestyle="--", linewidth=0.8, alpha=0.85)
-    ax.tick_params(colors="#a8b3c7", labelsize=10)
-    ax.xaxis.set_major_formatter(ticker.StrMethodFormatter("{x:,.0f}"))
-    ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.2f"))
-    ax.set_xlabel("training step", color="#c7d2e8", fontsize=11)
-    ax.set_ylabel("")
-    ax.text(
-        0.02,
-        0.96,
-        "Validation loss (lower is better)",
-        transform=ax.transAxes,
-        color="#aeb8cc",
-        fontsize=11,
-        fontweight="semibold",
-        va="top",
-    )
-    return ymin, ymax, max_step
-
-
-def draw_dashboard_header(fig, summaries):
-    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
-    fig.text(0.078, 0.918, "TinyShakespeare validation loss", color="#f8fafc", fontsize=25, fontweight="bold")
-    fig.text(
-        0.078,
-        0.887,
-        f"{fmt_step(max_step)} steps  ·  {len(summaries)} optimizers  ·  lower is better",
-        color="#8f9bae",
-        fontsize=11,
-    )
-
-
-def plot_dashboard_lines(ax, summaries, active_points=None, show_labels=True):
-    ymin, ymax, max_step = style_dashboard_chart(ax, summaries)
-    line_artists = {}
-    point_artists = {}
-    active_points = active_points or max(len(summary["rows"]) for summary in summaries)
-
-    for summary in summaries:
-        color = dashboard_color(summary["optimizer"])
-        rows = summary["rows"][:active_points]
-        xs = [row["step"] for row in rows]
-        ys = [row["val_loss"] for row in rows]
-        (line,) = ax.plot(xs, ys, color=color, linewidth=2.0, solid_capstyle="round")
-        point = ax.scatter(xs[-1:], ys[-1:], s=34, color=color, edgecolors="#dbeafe", linewidths=1.0, zorder=6)
-        line_artists[summary["optimizer"]] = line
-        point_artists[summary["optimizer"]] = point
-
-    leader = summaries[0]
-    if show_labels:
-        best_step = leader["best_step"]
-        ax.axvline(best_step, color="#d1d5db", linestyle="--", linewidth=1.1, alpha=0.75)
-        ax.text(
-            best_step,
-            ymax - (ymax - ymin) * 0.055,
-            fmt_step(best_step),
-            color="#ff6b00",
-            fontsize=10,
-            fontweight="bold",
-            ha="center",
-            bbox={"boxstyle": "round,pad=0.35", "facecolor": "#07101e", "edgecolor": "#223047"},
-        )
-        final_rows = sorted(summaries, key=lambda item: item["best_val"], reverse=True)
-        top = min(ymax - (ymax - ymin) * 0.18, 2.25)
-        bottom = max(ymin + (ymax - ymin) * 0.10, 1.54)
-        label_values = [top - idx * ((top - bottom) / max(len(final_rows) - 1, 1)) for idx in range(len(final_rows))]
-        x_label = max_step * 0.80
-        for summary, label_y in zip(final_rows, label_values):
-            color = dashboard_color(summary["optimizer"])
-            ax.text(
-                x_label,
-                label_y,
-                f"{summary['label']}  {summary['best_val']:.3f}",
-                color=color,
-                fontsize=10,
-                fontweight="semibold",
-                va="center",
-            )
-    return line_artists, point_artists
-
-
-def draw_dashboard_rank(ax, summaries, active_points=None):
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    for spine in ax.spines.values():
-        spine.set_color("#223047")
-
-    active_points = active_points or max(len(summary["rows"]) for summary in summaries)
-    leader = summaries[0]
-    runner_up = summaries[1] if len(summaries) > 1 else None
-    gap = runner_up["best_val"] - leader["best_val"] if runner_up else 0.0
-
-    add_card(ax, (0.03, 0.76), 0.94, 0.20, edge="#ff6b00", face="#0a0f1c", lw=1.1)
-    ax.text(0.08, 0.92, "CURRENT LEADER", color="#ff6b00", fontsize=8.8, fontweight="bold", va="top")
-    ax.text(0.08, 0.85, leader["label"], color="#f8fafc", fontsize=18, fontweight="bold", va="top")
-    ax.text(0.90, 0.80, f"{leader['best_val']:.3f}", color="#ff6b00", fontsize=24, fontweight="bold", ha="right", va="top")
-    ax.text(0.08, 0.78, f"+{gap:.3f} vs {runner_up['label'] if runner_up else 'next'}", color="#ff6b00", fontsize=9.5, fontweight="bold")
-
-    progress = (active_points - 1) / max(max(len(summary["rows"]) for summary in summaries) - 1, 1)
-    current_step = int(round(max(summary["rows"][-1]["step"] for summary in summaries) * progress))
-    add_card(ax, (0.03, 0.58), 0.94, 0.14, edge="#223047", face="#091426", lw=1.0)
-    ax.text(0.08, 0.69, "PROGRESS", color="#9aa6bb", fontsize=8.5, fontweight="bold", va="top")
-    ax.text(0.08, 0.62, f"step {fmt_step(current_step)}", color="#f8fafc", fontsize=16, fontweight="bold")
-    ax.text(0.52, 0.62, f"/ {fmt_step(max(summary['rows'][-1]['step'] for summary in summaries))}", color="#9aa6bb", fontsize=11)
-    ax.add_patch(patches.FancyBboxPatch((0.08, 0.595), 0.82, 0.012, boxstyle="round,pad=0", transform=ax.transAxes, facecolor="#2b3342", edgecolor="none"))
-    ax.add_patch(patches.FancyBboxPatch((0.08, 0.595), 0.82 * progress, 0.012, boxstyle="round,pad=0", transform=ax.transAxes, facecolor="#ff6b00", edgecolor="none"))
-
-    add_card(ax, (0.03, 0.04), 0.94, 0.50, edge="#223047", face="#091426", lw=1.0)
-    ax.text(0.08, 0.50, "LIVE RANKING", color="#9aa6bb", fontsize=8.5, fontweight="bold", va="top")
-    live_rows = []
-    for summary in summaries:
-        row = summary["rows"][min(active_points - 1, len(summary["rows"]) - 1)]
-        live_rows.append((row["val_loss"], summary))
-    live_rows.sort(key=lambda item: item[0])
-
-    y = 0.44
-    for idx, (current_val, summary) in enumerate(live_rows, start=1):
-        color = dashboard_color(summary["optimizer"])
-        if idx == 1:
-            ax.add_patch(patches.Rectangle((0.06, y - 0.025), 0.88, 0.045, transform=ax.transAxes, facecolor="#261b13", edgecolor="none"))
-        ax.text(0.08, y, str(idx), color="#cbd5e1", fontsize=9, va="center")
-        ax.scatter([0.17], [y], s=28, color=color, transform=ax.transAxes)
-        ax.text(0.22, y, summary["label"], color="#e5e7eb", fontsize=9.5, fontweight="semibold", va="center")
-        ax.text(0.90, y, f"{summary['best_val']:.3f}", color=color, fontsize=10, fontweight="bold", ha="right", va="center")
-        y -= 0.061
-
-
-def draw_dashboard_bottom(ax, summaries):
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    for spine in ax.spines.values():
-        spine.set_color("#223047")
-
-    leader = summaries[0]
-    fastest = sorted(summaries, key=lambda item: item["final_elapsed_s"])[:5]
-    ax.text(0.04, 0.65, "WINNER", color="#ff6b00", fontsize=9, fontweight="bold")
-    ax.text(0.04, 0.34, leader["label"], color="#f8fafc", fontsize=19, fontweight="bold")
-    ax.text(0.20, 0.34, f"{leader['best_val']:.3f}", color="#ff6b00", fontsize=23, fontweight="bold")
-    ax.plot([0.30, 0.30], [0.18, 0.82], color="#223047", linewidth=1)
-    ax.text(0.33, 0.70, "WALL TIME TO FINAL CHECKPOINT", color="#9aa6bb", fontsize=9, fontweight="bold")
-
-    x = 0.33
-    max_elapsed = max(summary["final_elapsed_s"] for summary in fastest)
-    for summary in fastest[:4]:
-        color = dashboard_color(summary["optimizer"])
-        ax.text(x, 0.48, summary["label"], color="#e5e7eb", fontsize=9, fontweight="semibold")
-        ax.add_patch(patches.FancyBboxPatch((x, 0.28), 0.07, 0.055, boxstyle="round,pad=0.01", transform=ax.transAxes, facecolor="#2b3342", edgecolor="none"))
-        ax.add_patch(patches.FancyBboxPatch((x, 0.28), 0.07 * (summary["final_elapsed_s"] / max_elapsed), 0.055, boxstyle="round,pad=0.01", transform=ax.transAxes, facecolor=color, edgecolor="none"))
-        ax.text(x + 0.08, 0.30, fmt_seconds(summary["final_elapsed_s"]), color="#cbd5e1", fontsize=9, va="center")
-        x += 0.16
-
-
-def render_dashboard_png(args, summaries):
-    fig = plt.figure(figsize=(14.6, 8.2), dpi=180)
-    _, ax_chart, ax_rank, ax_bottom = setup_dashboard_axes(fig)
-    draw_dashboard_header(fig, summaries)
-    plot_dashboard_lines(ax_chart, summaries, show_labels=True)
-    draw_dashboard_rank(ax_rank, summaries)
-    draw_dashboard_bottom(ax_bottom, summaries)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(args.out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.1)
-    plt.close(fig)
-
-
-def render_clean_png(args, summaries):
-    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
-    all_losses = [row["val_loss"] for summary in summaries for row in summary["rows"]]
-    ymin = min(all_losses)
-    ymax = max(all_losses)
-    span = max(ymax - ymin, 1e-6)
-    title = "TinyShakespeare (char LM)"
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["DejaVu Serif", "Times New Roman", "Times"],
-    })
-    fig = plt.figure(figsize=(12.4, 4.2), dpi=220, facecolor="white")
-    grid = GridSpec(1, 2, figure=fig, width_ratios=[1.0, 1.0], wspace=0.22)
-    ax_all = fig.add_subplot(grid[0, 0])
-    ax_focus = fig.add_subplot(grid[0, 1])
-
-    ordered = sorted(summaries, key=lambda item: item["best_val"])
-    available = {summary["optimizer"]: summary for summary in ordered}
-    focus_keys = []
-    for name in ["adamw", "torch_muon", "muon_like", "sf_adamw", "amuse_muon"]:
-        if name == "muon_like" and "torch_muon" in available:
-            continue
-        if name in available:
-            focus_keys.append(name)
-    focus = [available[name] for name in focus_keys] if focus_keys else ordered[: min(4, len(ordered))]
-
-    for axis in (ax_all, ax_focus):
-        axis.set_facecolor("white")
-        for spine in axis.spines.values():
-            spine.set_color("#666666")
-            spine.set_linewidth(0.8)
-        axis.grid(True, color="#b0b0b0", linewidth=0.6, alpha=0.6)
-        axis.tick_params(colors="#222222", labelsize=8, width=0.6, length=3)
-        axis.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k" if x else "0"))
-        axis.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
-        axis.set_xlabel("Step", fontsize=9, color="#222222")
-        axis.set_ylabel("Validation Loss", fontsize=9, color="#222222")
-
-    ax_all.set_title(title, fontsize=12, pad=6)
-    ax_focus.set_title(title, fontsize=12, pad=6)
-    ax_all.set_xlim(0, max_step)
-    ax_all.set_ylim(max(0.0, ymin - span * 0.04), ymax + span * 0.03)
-
-    focus_steps = []
-    focus_vals = []
-    for summary in ordered:
-        steps = [row["step"] for row in summary["rows"]]
-        vals = [row["val_loss"] for row in summary["rows"]]
-        ax_all.plot(
-            steps,
-            vals,
-            color=PALETTE.get(summary["optimizer"], "#334155"),
-            linewidth=1.15,
-            alpha=0.95,
-            label=summary["label"],
-        )
-
-    for summary in focus:
-        steps = [row["step"] for row in summary["rows"]]
-        vals = [row["val_loss"] for row in summary["rows"]]
-        focus_steps.extend(steps)
-        focus_vals.extend(vals)
-        ax_focus.plot(
-            steps,
-            vals,
-            color=PALETTE.get(summary["optimizer"], "#334155"),
-            linewidth=1.2,
-            alpha=0.95,
-            label=summary["label"],
-        )
-
-    if focus_steps and focus_vals:
-        ax_focus.set_xlim(min(focus_steps), max(focus_steps) * 1.02)
-        fmin = min(focus_vals)
-        fmax = max(focus_vals)
-        fspan = max(fmax - fmin, 1e-6)
-        ax_focus.set_ylim(fmin - fspan * 0.04, fmax + fspan * 0.04)
-
-    legend_all = ax_all.legend(loc="upper right", frameon=True, fontsize=7, ncol=2)
-    legend_all.get_frame().set_edgecolor("#cccccc")
-    legend_all.get_frame().set_facecolor("white")
-    legend_all.get_frame().set_alpha(0.95)
-    legend_focus = ax_focus.legend(loc="upper right", frameon=True, fontsize=7)
-    legend_focus.get_frame().set_edgecolor("#cccccc")
-    legend_focus.get_frame().set_facecolor("white")
-    legend_focus.get_frame().set_alpha(0.95)
-
-    fig.subplots_adjust(left=0.07, right=0.985, top=0.88, bottom=0.16)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(args.out, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
-    plt.close(fig)
-
-
-def has_metric(summaries, key):
-    return any(math.isfinite(row.get(key, float("nan"))) for summary in summaries for row in summary["rows"])
-
-
-def render_metric_png(args, summaries, out_path, keys, title, ylabel):
-    if not any(has_metric(summaries, key) for key in keys):
-        return False
-
-    max_step = max(summary["rows"][-1]["step"] for summary in summaries)
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["DejaVu Serif", "Times New Roman", "Times"],
-    })
-    fig, ax = plt.subplots(figsize=(7.2, 3.2), dpi=220, facecolor="white")
-    ax.set_facecolor("white")
-    for spine in ax.spines.values():
-        spine.set_color("#222222")
-        spine.set_linewidth(0.8)
-    ax.grid(axis="y", color="#d7d7d7", linewidth=0.55)
-    ax.tick_params(colors="#222222", labelsize=8, width=0.6, length=3)
-    ax.set_xlabel("step", color="#222222", fontsize=8, labelpad=6)
-    ax.set_ylabel(ylabel, color="#222222", fontsize=8, labelpad=6)
-    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x / 1000)}k" if x else "0k"))
-    ax.set_xlim(0, max_step)
-
-    labels = {
-        "beta_t": "beta_t",
-        "z_x_distance": "||z - x|| / ||x||",
-        "y_x_distance": "||y - x|| / ||x||",
-        "y_z_distance": "||y - z|| / ||z||",
-        "update_cosine_similarity": "cos(delta x_t, delta x_{t-1})",
-    }
-    line_idx = 0
-    for summary in summaries:
-        base_color = PALETTE.get(summary["optimizer"], "#334155")
-        for key in keys:
-            rows = [row for row in summary["rows"] if math.isfinite(row.get(key, float("nan")))]
-            if not rows:
-                continue
-            xs = [row["step"] for row in rows]
-            ys = [row[key] for row in rows]
-            label = f"{summary['label']} {labels.get(key, key)}" if len(keys) > 1 else summary["label"]
-            linestyle = ["-", "--", ":"][line_idx % 3] if len(keys) > 1 else "-"
-            ax.plot(xs, ys, color=base_color, linewidth=1.25, alpha=0.95, linestyle=linestyle, label=label)
-            line_idx += 1
-
-    legend = ax.legend(loc="best", frameon=False, fontsize=7, handlelength=2.2)
-    for text in legend.get_texts():
-        text.set_color("#222222")
-
-    fig.text(0.09, 0.95, title, color="#111111", fontsize=9.8)
-    fig.subplots_adjust(left=0.09, right=0.985, top=0.84, bottom=0.22)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.12)
-    plt.close(fig)
-    return True
-
-
 def main():
     args = parse_args()
     by_opt = load_results(args.results)
@@ -753,25 +645,12 @@ def main():
         raise ValueError(f"no rows found in {args.results}")
 
     summaries = summarize(by_opt)
-    render_clean_png(args, summaries)
+    render_main_png(args, summaries)
     render_html_report(args, summaries)
-    wrote_beta = render_metric_png(args, summaries, args.beta_out, ["beta_t"], "AMUSE beta schedule", "beta")
-    wrote_distance = render_metric_png(
-        args,
-        summaries,
-        args.distance_out,
-        ["z_x_distance", "y_x_distance", "y_z_distance"],
-        "AMUSE sequence distances",
-        "relative distance",
-    )
-    wrote_cosine = render_metric_png(
-        args,
-        summaries,
-        args.cosine_out,
-        ["update_cosine_similarity"],
-        "AMUSE x-update cosine similarity",
-        "cosine similarity",
-    )
+    wrote_beta = render_beta_png(args, summaries)
+    wrote_distance = render_distance_png(args, summaries)
+    wrote_cosine = render_cosine_png(args, summaries)
+    wrote_val_components = render_val_components_png(args, summaries)
     print(f"wrote {args.out}")
     print(f"wrote {args.html_out}")
     if wrote_beta:
@@ -780,6 +659,8 @@ def main():
         print(f"wrote {args.distance_out}")
     if wrote_cosine:
         print(f"wrote {args.cosine_out}")
+    if wrote_val_components:
+        print(f"wrote {args.val_components_out}")
 
 
 if __name__ == "__main__":
