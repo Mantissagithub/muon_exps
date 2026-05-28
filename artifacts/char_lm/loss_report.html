@@ -26,20 +26,6 @@
       line-height: 1.5;
       margin-bottom: 18px;
     }
-    .figure {
-      margin: 18px 0 26px;
-    }
-    .figure img {
-      width: 100%;
-      display: block;
-      border: 1px solid #d5d5d5;
-    }
-    .caption {
-      margin-top: 8px;
-      font-size: 13px;
-      color: #333333;
-      line-height: 1.45;
-    }
     .metrics {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -59,6 +45,20 @@
     .metric .v {
       margin-top: 6px;
       font-size: 18px;
+    }
+    .figure {
+      margin: 18px 0 26px;
+    }
+    .figure img {
+      width: 100%;
+      display: block;
+      border: 1px solid #d5d5d5;
+    }
+    .caption {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #333333;
+      line-height: 1.45;
     }
     table {
       width: 100%;
@@ -97,22 +97,22 @@
   <main>
     <h1>TinyShakespeare optimizer report</h1>
     <div class="deck">
-      Same initialization, same train/validation split, and same seed across all compared optimizers.
-      The main figure emphasizes validation-loss trajectories; auxiliary figures isolate the AMUSE schedule and sequence diagnostics.
+      Results rendered directly from <code>artifacts/char_lm/results.csv</code>.
+      The main figure compares validation loss across the optimizers present in that file.
     </div>
 
     <div class="metrics">
       <div class="metric">
         <div class="k">Best run</div>
-        <div class="v">AdamW · 1.535</div>
+        <div class="v">SF-Muon beta=0.6 · 1.524</div>
       </div>
       <div class="metric">
         <div class="k">Best step</div>
-        <div class="v">6,000</div>
+        <div class="v">14,000</div>
       </div>
       <div class="metric">
         <div class="k">Margin to next</div>
-        <div class="v">0.006</div>
+        <div class="v">0.009</div>
       </div>
     </div>
 
@@ -120,7 +120,7 @@
       <img src="loss_curves.png" alt="Validation loss comparison">
       <div class="caption">
         <strong>Figure 1.</strong> Validation loss against training step for the benchmarked optimizers.
-        The right panel zooms into the late-training region to expose the final spread between methods.
+        The left panel shows every optimizer present in the CSV; the right panel focuses on the main comparison set when available.
       </div>
     </section>
 
@@ -138,21 +138,39 @@
       <tbody>
         
             <tr>
+              <td>SF-Muon beta=0.6</td>
+              <td>1.524</td>
+              <td>1.531</td>
+              <td>14,000</td>
+              <td>6m 54s</td>
+              <td>297,111</td>
+            </tr>
+            
+            <tr>
+              <td>amuse_muon_b0.4_r0.5</td>
+              <td>1.533</td>
+              <td>1.533</td>
+              <td>15,000</td>
+              <td>6m 56s</td>
+              <td>295,394</td>
+            </tr>
+            
+            <tr>
               <td>AdamW</td>
               <td>1.535</td>
               <td>1.614</td>
               <td>6,000</td>
-              <td>3m 27s</td>
-              <td>594,848</td>
+              <td>3m 26s</td>
+              <td>596,379</td>
             </tr>
             
             <tr>
-              <td>Muon</td>
+              <td>Torch Muon</td>
               <td>1.541</td>
               <td>1.597</td>
               <td>5,000</td>
-              <td>3m 44s</td>
-              <td>547,653</td>
+              <td>3m 40s</td>
+              <td>558,295</td>
             </tr>
             
             <tr>
@@ -160,17 +178,44 @@
               <td>1.541</td>
               <td>1.600</td>
               <td>5,000</td>
-              <td>4m 36s</td>
-              <td>444,729</td>
+              <td>4m 37s</td>
+              <td>444,409</td>
             </tr>
             
             <tr>
-              <td>AMUSE-Muon</td>
+              <td>SF-Muon beta=0.9</td>
+              <td>1.544</td>
+              <td>1.544</td>
+              <td>15,000</td>
+              <td>6m 39s</td>
+              <td>307,748</td>
+            </tr>
+            
+            <tr>
+              <td>amuse_muon_b0.6_r0.5</td>
+              <td>1.552</td>
+              <td>1.552</td>
+              <td>15,000</td>
+              <td>7m 29s</td>
+              <td>273,583</td>
+            </tr>
+            
+            <tr>
+              <td>amuse_muon_b0.4_r0.8</td>
+              <td>1.573</td>
+              <td>1.573</td>
+              <td>15,000</td>
+              <td>7m 04s</td>
+              <td>289,868</td>
+            </tr>
+            
+            <tr>
+              <td>amuse_muon_b0.6_r0.8</td>
               <td>1.582</td>
               <td>1.582</td>
               <td>15,000</td>
-              <td>4m 59s</td>
-              <td>410,472</td>
+              <td>7m 10s</td>
+              <td>285,964</td>
             </tr>
             
       </tbody>
@@ -179,15 +224,15 @@
     <section class="diag-grid">
       <div class="figure">
         <img src="beta_schedule.png" alt="AMUSE beta schedule">
-        <div class="caption"><strong>Figure 2.</strong> The AMUSE schedule parameter $\beta_t$ over training.</div>
+        <div class="caption"><strong>Figure 2.</strong> AMUSE beta schedule.</div>
       </div>
       <div class="figure">
         <img src="amuse_distances.png" alt="AMUSE sequence distances">
-        <div class="caption"><strong>Figure 3.</strong> Relative distances between the x, y, and z AMUSE sequences.</div>
+        <div class="caption"><strong>Figure 3.</strong> Relative x/y/z sequence distances.</div>
       </div>
       <div class="figure">
         <img src="update_cosine.png" alt="AMUSE update cosine similarity">
-        <div class="caption"><strong>Figure 4.</strong> Cosine similarity between consecutive AMUSE x-sequence updates.</div>
+        <div class="caption"><strong>Figure 4.</strong> Cosine similarity between successive AMUSE x-updates.</div>
       </div>
     </section>
   </main>

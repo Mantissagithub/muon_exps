@@ -1,22 +1,24 @@
 # muon experiments
 
-just messing around with muon kernels, optimizer variants, and a couple of small training comparisons.
+small experimental workspace for muon-style optimizer kernels, normalization variants, aurora-style update rules, and lightweight training comparisons. the goal is not to present a final optimizer claim; it is to keep the implementation details, benchmark surfaces, and observed tradeoffs easy to inspect.
 
 ## layout
 
 ```text
 .
-├── cuda/                   # cuda kernels, variant implementations, benchmark drivers
-├── scripts/                # tui wrappers / quick benchmark entrypoints
+├── cuda/                   # cuda kernels, optimizer variants, and benchmark drivers
+├── scripts/                # tui wrappers and quick benchmark entrypoints
 ├── experiments/
 │   ├── mnist/              # older small training comparisons
 │   └── char_lm/            # tinyshakespeare optimizer comparison
-├── optimizers/             # pytorch reference optimizer wrappers
-├── artifacts/              # saved outputs / compiled benchmark binaries
+├── optimizers/             # pytorch reference implementations for training runs
+├── artifacts/              # saved reports, plots, and compiled benchmark binaries
 └── README.md
 ```
 
 ## run
+
+common entrypoints:
 
 - `uv run scripts/benchmark_tui.py`
 - `uv run scripts/optimizer_variants_tui.py`
@@ -31,38 +33,42 @@ just messing around with muon kernels, optimizer variants, and a couple of small
 ## what's here
 
 - `cuda/benchmark.cu`
-  - the older main cuda benchmark driver.
+  - the older cuda benchmark driver for newton-schulz and related kernel experiments.
 - `cuda/benchmark_optimizer_variants.cu`
   - compares `muon`, `normuon`, `u_normuon`, `aurora`, and `riemann_aurora` on synthetic anisotropic gradients.
 - `cuda/README.md`
-  - writes out the math for the cuda-side variants in latex.
+  - records the math and implementation notes for the cuda-side variants.
+- `docs/README.md`
+  - collects the optimizer update rules and schedule-free / AMUSE equations in one place.
 - `optimizers/muon_variants.py`
-  - pytorch reference wrappers used for the char-lm run.
-- the current synthetic benchmark grid is intentionally tighter because this repo is being run on a `RTX 4060 Laptop GPU`, and `riemann_aurora` gets expensive fast.
-- some gram-ns / polar restart paths are still wip and not numerically stable in this branch.
+  - pytorch reference implementations used by the character-lm experiments.
+
+the synthetic benchmark grid is intentionally modest because most runs here are on an `RTX 4060 Laptop GPU`, and `riemann_aurora` becomes expensive quickly. some gram-ns and polar-restart paths are still experimental and should not be treated as numerically reliable in this branch.
 
 ## artifacts
 
 - `artifacts/bin/benchmark`
-  - compiled binary for the older gram-ns / muon kernel benchmark.
+  - compiled binary for the older gram-ns and muon-kernel benchmark.
 - `artifacts/bin/benchmark_optimizer_variants`
   - compiled binary for the synthetic optimizer-update benchmark.
 - `benchmark_results.csv`
   - full csv output from `cuda/benchmark_optimizer_variants.cu`.
 - `artifacts/char_lm/results.csv`
-  - per-checkpoint train loss, val loss, tokens/sec, elapsed time, and running best val.
+  - per-checkpoint train loss, validation loss, throughput, elapsed time, and running best validation loss.
 - `artifacts/char_lm/summary.md`
-  - compact final summary for the saved tinyshakespeare run.
+  - compact summary for the saved TinyShakespeare baseline run.
 - `artifacts/char_lm/loss_curves.png`
-  - the static validation-loss plot with a late-run zoom inset.
+  - static validation-loss plot with a late-run zoom inset.
 - `artifacts/char_lm/loss_report.html`
-  - the richer browser report for the same char-lm run.
+  - browser report for the same character-lm run.
+- `artifacts/char_lm_amuse_fix/`
+  - newer AMUSE-focused run, including `results.csv`, `summary.md`, plots, and the html report.
 - `artifacts/mnist/results/`
-  - the older mnist logs and loss-curve images.
+  - older mnist logs and loss-curve images.
 
 ## cuda benchmark
 
-verify is still the same story: quintic matches v1, while the polar / restart paths are still not stable in this branch.
+the low-level cuda benchmark is mainly a correctness and timing check for matrix orthogonalization variants. in the current snapshot, the quintic path matches the v1 implementation, while the polar and restart paths are not stable enough to treat as valid baselines.
 
 | shape     | quintic | v1_ortho | quintic_ortho | polar_ortho | polar_restart_ortho | polar_restart_syrk_ortho | fp16_ortho |
 |-----------|---------|----------|---------------|-------------|---------------------|---------------------------|------------|
@@ -71,14 +77,14 @@ verify is still the same story: quintic matches v1, while the polar / restart pa
 | 4096×1024 | ok      | ok       | ok            | fail        | fail                | fail                      | fail       |
 | 8192×2048 | ok      | ok       | ok            | fail        | fail                | fail                      | fail       |
 
-square cases are still slower than pytorch / flash-muon, and normuon is basically flat with v1 there:
+on square matrices, the local cuda path is still slower than pytorch / flash-muon-style baselines, and `normuon` is essentially flat with v1:
 
 | size   | v1 ns   | normuon | pytorch muon | flash-muon |
 |--------|---------|----------|--------------|------------|
 | 1024²  | 4.62 ms | 4.57 ms  | 1.05 ms      | ~1.0 ms    |
 | 2048²  | 30.59 ms| 30.75 ms | 1.99 ms      | ~1.4 ms    |
 
-more rectangular shapes still favor the gram-ns variants, not normuon:
+on more rectangular matrices, the gram-ns variants remain more favorable than `normuon`:
 
 | shape     | v1 ns | normuon | quintic | polar | +restart | +syrk | best speedup |
 |-----------|-------|----------|---------|-------|----------|-------|--------------|
@@ -86,7 +92,7 @@ more rectangular shapes still favor the gram-ns variants, not normuon:
 | 4096×1024 | 12.71 | 12.66    | 8.59    | 8.59  | 10.13    | 9.51  | 1.48x        |
 | 8192×1024 | 23.98 | 24.06    | 11.41   | 11.41 | 14.93    | 13.69 | 2.10x        |
 
-bench run for the table above:
+hardware for the table above:
 
 - `NVIDIA GeForce RTX 4060 Laptop GPU`
 - `cc 8.9`
@@ -98,18 +104,18 @@ bench run for the table above:
 
 ### synthetic aurora / riemann-aurora benchmark lineage
 
-`cuda/benchmark_optimizer_variants.cu` does not train a model. it just compares the update rule itself on synthetic gradients with deliberately uneven row energy.
+`cuda/benchmark_optimizer_variants.cu` does not train a model. it isolates the update rule on synthetic gradients with deliberately uneven row energy, so the numbers are about update geometry and kernel cost, not downstream task loss.
 
 what the extra metrics mean:
 
 - `row cv`
-  - lower means the update mass is spread more evenly across rows / neurons.
+  - lower means update mass is distributed more evenly across rows / neurons.
 - `dead rows`
-  - fraction of rows with almost no update.
+  - fraction of rows receiving almost no update.
 - `ortho defect`
-  - how far the final update drifts from the polar geometry.
+  - deviation of the final update from the intended polar geometry.
 - `alignment`
-  - cosine-style alignment with the original gradient.
+  - cosine-style alignment between the final update and the original gradient.
 
 current readout:
 
@@ -136,30 +142,30 @@ summary:
 - `u_normuon` and `normuon` win the largest number of cells on this tightened laptop-scale grid.
 - `muon` remains the strongest speed and alignment baseline, and it keeps the best direction score on most rectangular cases.
 - `riemann_aurora` is still the strongest method on row-balance metrics, but it achieves that at a substantially higher runtime cost.
-- `aurora` improves a small number of direction and dead-row cases, but it does not look competitive as a general-purpose winner on this benchmark.
+- `aurora` improves a small number of direction and dead-row cases, but it does not look competitive as a general-purpose winner on this particular synthetic grid.
 
 full table is in `benchmark_results.csv`, and `scripts/optimizer_variants_tui.py` renders it in a more readable way.
 
 ## char lm training
 
-there is also a small character-level language-model comparison on TinyShakespeare:
+the repo also includes a small character-level language-model comparison on TinyShakespeare:
 
 ```bash
 python experiments/char_lm/train_optimizer_variants.py
 python experiments/char_lm/plot_results.py
 ```
 
-by default the current script writes the amuse-focused run, but it is useful to keep the result surfaces below conceptually separate.
+by default the current script writes the AMUSE-focused run. for interpretation, the result surfaces below should stay conceptually separate.
 
 there are three distinct benchmark surfaces in this repo:
 
 - the synthetic optimizer-update benchmark above, where aurora and riemann-aurora are evaluated on update geometry rather than language-model validation loss
 - the older broad TinyShakespeare baseline run below, where aurora and riemann-aurora participate in a wider training comparison
-- the later amuse follow-up run, which is the narrower schedule-free / amuse-specific comparison
+- the later AMUSE follow-up run, which is the narrower schedule-free / AMUSE-specific comparison
 
 ### broad baseline run
 
-this is the earlier wider comparison that still includes `aurora` and `riemann_aurora`.
+this is the earlier wider training comparison that still includes `aurora` and `riemann_aurora`.
 
 it writes results to `artifacts/char_lm/`. `torch_muon` is skipped automatically if the active torch build does not expose `torch.optim.Muon`.
 
@@ -187,16 +193,16 @@ current saved run from `artifacts/char_lm/summary.md`:
 summary:
 
 - `u_normuon` is the strongest validation result in this checked-in baseline run.
-- `adamw`, `torch_muon`, `muon_like`, `aurora`, and `riemann_aurora` occupy a similar loss band, but with materially different runtime costs.
+- `adamw`, `torch_muon`, `muon_like`, `aurora`, and `riemann_aurora` occupy a similar validation-loss band, but with materially different runtime costs.
 - `normuon` is clearly behind on this workload.
 
 `artifacts/char_lm/loss_curves.png` is the quickest way to inspect the run: it shows the full validation trajectory together with a late-run inset. `artifacts/char_lm/loss_report.html` keeps the fuller browser view.
 
 ![TinyShakespeare validation loss](artifacts/char_lm/loss_curves.png)
 
-### amuse follow-up run
+### AMUSE follow-up run
 
-this is the later amuse-specific follow-up:
+this is the later AMUSE-specific follow-up:
 
 ```bash
 uv run python experiments/char_lm/train_optimizer_variants.py \
@@ -227,16 +233,16 @@ current saved run from `artifacts/char_lm_amuse_fix/summary.md`:
 
 summary:
 
-- amuse achieves the best peak validation in this sweep. the lowest value is `1.4947`, reached by `amuse_muon`; `amuse_muon_b0.4_r0.5` is the same configuration under an explicit ablation name.
-- that does not imply that amuse is the strongest late-run optimizer in this setup. the best amuse configurations reach their minimum around step `3000`, then drift upward over the remainder of training.
-- `sf_adamw` is the stronger late-run baseline here: it does not match the best single validation point, but it continues improving much longer and finishes substantially better than the amuse variants.
-- `sf_muon_fixed_beta_0.6` lies between those two behaviors: its peak is weaker than the best amuse run, but its final stability is noticeably better.
+- AMUSE achieves the best peak validation in this sweep. the lowest value is `1.4947`, reached by `amuse_muon`; `amuse_muon_b0.4_r0.5` is the same configuration under an explicit ablation name.
+- that does not imply that AMUSE is the strongest late-run optimizer in this setup. the best AMUSE configurations reach their minimum around step `3000`, then drift upward over the remainder of training.
+- `sf_adamw` is the stronger late-run baseline here: it does not match the best single validation point, but it continues improving much longer and finishes substantially better than the AMUSE variants.
+- `sf_muon_fixed_beta_0.6` lies between those two behaviors: its peak is weaker than the best AMUSE run, but its final stability is noticeably better.
 
 the most useful interpretation split for this section is:
 
-- if the question is "which method reached the best single validation point?", amuse wins.
+- if the question is "which method reached the best single validation point?", AMUSE wins.
 - if the question is "which method maintained performance deepest into the run?", `sf_adamw` is stronger.
 
-`artifacts/char_lm_amuse_fix/loss_curves.png` is therefore consistent with the logs. it plots the raw `val_x` trajectory over time rather than a best-so-far curve, so both the early amuse win and the later amuse drift are visible in the same figure.
+`artifacts/char_lm_amuse_fix/loss_curves.png` is therefore consistent with the logs. it plots the raw `val_x` trajectory over time rather than a best-so-far curve, so both the early AMUSE win and the later AMUSE drift are visible in the same figure.
 
 ![TinyShakespeare AMUSE validation loss](artifacts/char_lm_amuse_fix/loss_curves.png)
