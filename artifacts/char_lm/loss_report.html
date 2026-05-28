@@ -5,234 +5,791 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TinyShakespeare optimizer report</title>
   <style>
+    :root {
+      --bg: #f6f4ee;
+      --panel: rgba(255, 255, 255, 0.84);
+      --panel-strong: #ffffff;
+      --ink: #171717;
+      --muted: #667085;
+      --hairline: rgba(23, 23, 23, 0.12);
+      --shadow: 0 24px 70px rgba(22, 30, 45, 0.10);
+      --display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+      --body: "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: #ffffff;
-      color: #111111;
-      font-family: "DejaVu Serif", "Times New Roman", serif;
+      font-family: var(--body);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 16% 0%, rgba(255, 107, 0, 0.10), transparent 30%),
+        radial-gradient(circle at 84% 8%, rgba(0, 194, 168, 0.09), transparent 28%),
+        linear-gradient(180deg, #fbfaf7 0%, var(--bg) 100%);
+      min-height: 100vh;
     }
-    main {
-      width: min(1120px, calc(100vw - 40px));
-      margin: 28px auto 40px;
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.08;
+      background-image:
+        linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+      background-size: 18px 18px;
+      mask-image: linear-gradient(180deg, black 20%, transparent 100%);
     }
-    h1 {
-      font-size: 24px;
-      font-weight: 400;
-      margin: 0 0 6px;
+    .page {
+      width: min(1500px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 30px 0 42px;
     }
-    .deck {
-      color: #333333;
-      font-size: 14px;
-      line-height: 1.5;
+    .hero {
+      display: grid;
+      grid-template-columns: 1.4fr 0.9fr;
+      gap: 18px;
+      align-items: end;
       margin-bottom: 18px;
     }
-    .metrics {
+    .kicker {
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #8b6f47;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-family: var(--display);
+      font-size: clamp(52px, 6.2vw, 84px);
+      line-height: 0.93;
+      margin: 0;
+      letter-spacing: -0.04em;
+      font-weight: 700;
+    }
+    .subtitle {
+      margin-top: 14px;
+      max-width: 60ch;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.65;
+    }
+    .hero-stats {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .stat-card, .panel {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--hairline);
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+      border-radius: 26px;
+    }
+    .stat-card {
+      padding: 18px 18px 16px;
+    }
+    .stat-label {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font-size: 11px;
+    }
+    .stat-value {
+      margin-top: 10px;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .stat-meta {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .dashboard {
+      display: grid;
+      grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.78fr);
+      gap: 18px;
+    }
+    .panel {
+      padding: 22px;
+    }
+    .panel h2 {
+      margin: 0;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: #7a7468;
+      font-weight: 600;
+    }
+    .panel-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: baseline;
+      margin-bottom: 16px;
+    }
+    .panel-strong-label {
+      font-size: 28px;
+      font-family: var(--display);
+      letter-spacing: -0.03em;
+    }
+    .panel-note {
+      color: var(--muted);
+      font-size: 13px;
+      font-family: var(--mono);
+    }
+    .chart-frame {
+      position: relative;
+      min-height: 0;
+      border-radius: 22px;
+      background: #ffffff;
+      border: 1px solid rgba(23, 23, 23, 0.08);
+      overflow: hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.80);
+    }
+    .chart-caption {
+      position: absolute;
+      left: 24px;
+      top: 18px;
+      z-index: 2;
+      max-width: 360px;
+    }
+    .chart-caption .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: #7f7464;
+    }
+    .chart-caption h3 {
+      margin: 8px 0 6px;
+      font-size: 30px;
+      line-height: 1.0;
+      font-family: var(--display);
+      letter-spacing: -0.04em;
+    }
+    .chart-caption p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .chart-svg {
+      width: 100%;
+      height: 560px;
+      display: block;
+    }
+    .grid-line {
+      stroke: rgba(23, 23, 23, 0.08);
+      stroke-width: 1;
+    }
+    .grid-line-v {
+      stroke: rgba(23, 23, 23, 0.05);
+    }
+    .axis-label {
+      fill: #726c61;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .axis-label-y { text-anchor: end; }
+    .axis-label-x { text-anchor: middle; }
+    .series-line {
+      fill: none;
+      stroke: var(--series-color);
+      stroke-width: 3.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 2000;
+      stroke-dashoffset: 2000;
+      animation: draw-line 2.1s cubic-bezier(.2,.7,.15,1) forwards;
+      animation-delay: var(--delay);
+    }
+    .best-ring {
+      fill: rgba(255,255,255,0.94);
+      stroke: var(--series-color);
+      stroke-width: 2.4;
+      opacity: 0;
+      animation: pop-in 0.5s ease forwards;
+      animation-delay: calc(var(--delay) + 1.3s);
+    }
+    .best-core {
+      fill: var(--series-color);
+      opacity: 0;
+      animation: pop-in 0.5s ease forwards;
+      animation-delay: calc(var(--delay) + 1.38s);
+    }
+    .label-link {
+      fill: none;
+      stroke: var(--series-color);
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      opacity: 0;
+      animation: fade-in 0.45s ease forwards;
+      animation-delay: calc(var(--delay) + 1.45s);
+    }
+    .endpoint-column {
+      position: absolute;
+      inset: 0 18px 0 auto;
+      width: 190px;
+      pointer-events: none;
+    }
+    .endpoint-tag {
+      position: absolute;
+      right: 18px;
+      min-width: 160px;
+      display: flex;
+      justify-content: space-between;
       gap: 10px;
-      margin: 20px 0;
+      align-items: center;
+      padding: 8px 11px;
+      border: 1px solid;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      backdrop-filter: blur(8px);
+      opacity: 0;
+      transform: translateX(16px);
+      animation: slide-in 0.55s cubic-bezier(.2,.8,.2,1) forwards;
+      animation-delay: 1.6s;
     }
-    .metric {
-      border: 1px solid #d5d5d5;
-      padding: 10px 12px;
+    .endpoint-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 112px;
     }
-    .metric .k {
+    .chart-axis-title {
+      position: absolute;
+      color: #746e64;
       font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #666666;
+      letter-spacing: 0.14em;
     }
-    .metric .v {
-      margin-top: 6px;
-      font-size: 18px;
+    .chart-axis-title.x { left: 50%; bottom: 18px; transform: translateX(-50%); }
+    .chart-axis-title.y { left: 8px; top: 52%; transform: rotate(-90deg) translateY(50%); transform-origin: left top; }
+    .stack {
+      display: grid;
+      gap: 18px;
     }
-    .figure {
-      margin: 18px 0 26px;
+    .rank-row, .time-row {
+      padding: 14px 0 0;
+      border-top: 1px solid rgba(23, 23, 23, 0.08);
     }
-    .figure img {
-      width: 100%;
-      display: block;
-      border: 1px solid #d5d5d5;
+    .rank-row:first-child, .time-row:first-child {
+      border-top: 0;
+      padding-top: 4px;
     }
-    .caption {
-      margin-top: 8px;
+    .rank-head, .time-head {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .rank-index {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #7b7468;
+      letter-spacing: 0.12em;
+    }
+    .rank-name, .time-name {
+      flex: 1;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .rank-score, .time-score {
+      font-family: var(--mono);
       font-size: 13px;
-      color: #333333;
-      line-height: 1.45;
+    }
+    .rank-meta {
+      margin-top: 7px;
+      color: #746e64;
+      font-size: 12px;
+    }
+    .rank-bar, .time-bar {
+      width: 100%;
+      height: 8px;
+      background: rgba(23, 23, 23, 0.08);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .rank-bar span, .time-bar span {
+      display: block;
+      height: 100%;
+      width: 100%;
+      transform-origin: left center;
+      transform: scaleX(var(--fill));
+      background: var(--rank-color);
+      border-radius: inherit;
+      animation: grow-bar 1s cubic-bezier(.2,.7,.2,1) both;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 18px;
+      margin-top: 18px;
+    }
+    .table-wrap {
+      overflow: auto;
+      border-radius: 20px;
+      border: 1px solid rgba(23, 23, 23, 0.08);
+      background: rgba(255,255,255,0.72);
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 16px;
-      font-size: 13px;
+      min-width: 640px;
     }
     th, td {
-      border: 1px solid #dcdcdc;
-      padding: 8px 10px;
+      padding: 13px 14px;
+      border-bottom: 1px solid rgba(23, 23, 23, 0.08);
       text-align: left;
+      white-space: nowrap;
+      font-size: 13px;
     }
     th {
-      font-weight: 600;
-      background: #f7f7f7;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: rgba(252, 249, 243, 0.96);
+      color: #6d685e;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 11px;
     }
-    .diag-grid {
+    tr:last-child td { border-bottom: 0; }
+    .swatch {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      margin-right: 10px;
+      vertical-align: middle;
+    }
+    .snapshot {
+      position: relative;
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid rgba(23, 23, 23, 0.08);
+      background: rgba(255,255,255,0.82);
+    }
+    .snapshot img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .snapshot-badge {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.82);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(23,23,23,0.08);
+      font-size: 12px;
+      color: #5d584f;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .read-card {
+      margin-top: 16px;
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 22px;
+      gap: 12px;
     }
-    .diag-grid img {
-      width: 100%;
-      display: block;
-      border: 1px solid #d5d5d5;
+    .read-pill {
+      border: 1px solid rgba(23,23,23,0.08);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.72);
+      padding: 14px;
     }
-    @media (max-width: 860px) {
-      .metrics, .diag-grid {
+    .read-label {
+      color: #7a7468;
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      font-size: 10px;
+    }
+    .read-value {
+      margin-top: 8px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .read-note {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    @keyframes draw-line {
+      to { stroke-dashoffset: 0; }
+    }
+    @keyframes grow-bar {
+      from { transform: scaleX(0); }
+      to { transform: scaleX(var(--fill)); }
+    }
+    @keyframes rise-in {
+      from { opacity: 0; transform: translateY(18px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fade-in {
+      to { opacity: 1; }
+    }
+    @keyframes pop-in {
+      from { opacity: 0; transform: scale(0.7); transform-origin: center; }
+      to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes slide-in {
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @media (max-width: 1120px) {
+      .hero,
+      .dashboard,
+      .metrics-grid {
         grid-template-columns: 1fr;
       }
+      .hero-stats {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 780px) {
+      .page { width: min(100vw - 20px, 100%); padding-top: 18px; }
+      .hero-stats { grid-template-columns: 1fr; }
+      .panel { padding: 16px; border-radius: 20px; }
+      .chart-frame { min-height: 500px; }
+      .chart-svg { height: 500px; }
+      .endpoint-column { display: none; }
+      .table-wrap { margin-top: 12px; }
+      .read-card { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-  <main>
-    <h1>TinyShakespeare optimizer report</h1>
-    <div class="deck">
-      Results rendered directly from <code>artifacts/char_lm/results.csv</code>.
-      The main figure compares validation loss across the optimizers present in that file.
-    </div>
-
-    <div class="metrics">
-      <div class="metric">
-        <div class="k">Best run</div>
-        <div class="v">SF-Muon beta=0.6 · 1.524</div>
+  <main class="page">
+    <section class="hero">
+      <div>
+        <div class="kicker">char lm optimizer report</div>
+        <h1>TinyShakespeare<br>optimizer run</h1>
+        <div class="subtitle">
+          one long-form training comparison over the same model init and dataset split.
+          the view below shows the full validation trajectory, not just end-state numbers.
+        </div>
       </div>
-      <div class="metric">
-        <div class="k">Best step</div>
-        <div class="v">14,000</div>
-      </div>
-      <div class="metric">
-        <div class="k">Margin to next</div>
-        <div class="v">0.009</div>
-      </div>
-    </div>
-
-    <section class="figure">
-      <img src="loss_curves.png" alt="Validation loss comparison">
-      <div class="caption">
-        <strong>Figure 1.</strong> Validation loss against training step for the benchmarked optimizers.
-        The left panel shows every optimizer present in the CSV; the right panel focuses on the main comparison set when available.
+      <div class="hero-stats">
+        <div class="stat-card">
+          <div class="stat-label">best validation</div>
+          <div class="stat-value">U-NorMuon</div>
+          <div class="stat-meta">1.506 at step 10,500</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">margin to next</div>
+          <div class="stat-value">0.022</div>
+          <div class="stat-meta">Aurora</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">fastest wall time</div>
+          <div class="stat-value">AdamW</div>
+          <div class="stat-meta">3m 27s to final checkpoint</div>
+        </div>
       </div>
     </section>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Optimizer</th>
-          <th>Best val</th>
-          <th>Final val</th>
-          <th>Best step</th>
-          <th>Wall time</th>
-          <th>Tokens/sec</th>
-        </tr>
-      </thead>
-      <tbody>
-        
+    <section class="dashboard">
+      <div class="panel">
+        <div class="panel-title">
+          <div>
+            <h2>static trajectory</h2>
+            <div class="panel-strong-label">validation loss with late-run zoom</div>
+          </div>
+          <div class="panel-note">15,000 steps · 7 optimizers</div>
+        </div>
+        <div class="chart-frame">
+          <img src="loss_curves.png" alt="Static validation loss plot" style="display:block;width:100%;height:auto;">
+        </div>
+        <div class="read-card">
+          <div class="read-pill">
+            <div class="read-label">winner</div>
+            <div class="read-value">U-NorMuon · 1.506</div>
+            <div class="read-note">best validation at step 10,500</div>
+          </div>
+          <div class="read-pill">
+            <div class="read-label">next best gap</div>
+            <div class="read-value">0.022</div>
+            <div class="read-note">margin over Aurora</div>
+          </div>
+          <div class="read-pill">
+            <div class="read-label">best final checkpoint</div>
+            <div class="read-value">U-NorMuon</div>
+            <div class="read-note">final val 1.539</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="panel">
+          <div class="panel-title">
+            <div>
+              <h2>ranking</h2>
+              <div class="panel-strong-label">best validation loss</div>
+            </div>
+            <div class="panel-note">lower is better</div>
+          </div>
+          
+            <div class="rank-row" style="--fill:1.0000; --rank-color:#ea580c;">
+              <div class="rank-head">
+                <span class="rank-index">01</span>
+                <span class="rank-name">U-NorMuon</span>
+                <span class="rank-score">1.506</span>
+              </div>
+              <div class="rank-bar"><span></span></div>
+              <div class="rank-meta">best @ step 10,500</div>
+            </div>
+            
+            <div class="rank-row" style="--fill:0.6975; --rank-color:#7c3aed;">
+              <div class="rank-head">
+                <span class="rank-index">02</span>
+                <span class="rank-name">Aurora</span>
+                <span class="rank-score">1.529</span>
+              </div>
+              <div class="rank-bar"><span></span></div>
+              <div class="rank-meta">best @ step 5,000</div>
+            </div>
+            
+            <div class="rank-row" style="--fill:0.6650; --rank-color:#9333ea;">
+              <div class="rank-head">
+                <span class="rank-index">03</span>
+                <span class="rank-name">Riemann Aurora</span>
+                <span class="rank-score">1.531</span>
+              </div>
+              <div class="rank-bar"><span></span></div>
+              <div class="rank-meta">best @ step 5,000</div>
+            </div>
+            
+            <div class="rank-row" style="--fill:0.6167; --rank-color:#111827;">
+              <div class="rank-head">
+                <span class="rank-index">04</span>
+                <span class="rank-name">AdamW</span>
+                <span class="rank-score">1.535</span>
+              </div>
+              <div class="rank-bar"><span></span></div>
+              <div class="rank-meta">best @ step 6,000</div>
+            </div>
+            
+            <div class="rank-row" style="--fill:0.5345; --rank-color:#2563eb;">
+              <div class="rank-head">
+                <span class="rank-index">05</span>
+                <span class="rank-name">Torch Muon</span>
+                <span class="rank-score">1.541</span>
+              </div>
+              <div class="rank-bar"><span></span></div>
+              <div class="rank-meta">best @ step 5,000</div>
+            </div>
+            
+            <div class="rank-row" style="--fill:0.5324; --rank-color:#0f766e;">
+              <div class="rank-head">
+                <span class="rank-index">06</span>
+                <span class="rank-name">MuonLike</span>
+                <span class="rank-score">1.541</span>
+              </div>
+              <div class="rank-bar"><span></span></div>
+              <div class="rank-meta">best @ step 5,000</div>
+            </div>
+            
+            <div class="rank-row" style="--fill:0.3500; --rank-color:#dc2626;">
+              <div class="rank-head">
+                <span class="rank-index">07</span>
+                <span class="rank-name">NorMuon</span>
+                <span class="rank-score">1.554</span>
+              </div>
+              <div class="rank-bar"><span></span></div>
+              <div class="rank-meta">best @ step 9,000</div>
+            </div>
+            
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">
+            <div>
+              <h2>runtime</h2>
+              <div class="panel-strong-label">wall time to final checkpoint</div>
+            </div>
+            <div class="panel-note">same hardware path</div>
+          </div>
+          
+            <div class="time-row" style="--fill:0.2682; --rank-color:#111827; --delay:0.00s;">
+              <div class="time-head">
+                <span class="time-name">AdamW</span>
+                <span class="time-score">3m 27s</span>
+              </div>
+              <div class="time-bar"><span></span></div>
+            </div>
+            
+            <div class="time-row" style="--fill:0.2867; --rank-color:#2563eb; --delay:0.08s;">
+              <div class="time-head">
+                <span class="time-name">Torch Muon</span>
+                <span class="time-score">3m 41s</span>
+              </div>
+              <div class="time-bar"><span></span></div>
+            </div>
+            
+            <div class="time-row" style="--fill:0.3562; --rank-color:#0f766e; --delay:0.16s;">
+              <div class="time-head">
+                <span class="time-name">MuonLike</span>
+                <span class="time-score">4m 35s</span>
+              </div>
+              <div class="time-bar"><span></span></div>
+            </div>
+            
+            <div class="time-row" style="--fill:0.3846; --rank-color:#ea580c; --delay:0.24s;">
+              <div class="time-head">
+                <span class="time-name">U-NorMuon</span>
+                <span class="time-score">4m 56s</span>
+              </div>
+              <div class="time-bar"><span></span></div>
+            </div>
+            
+            <div class="time-row" style="--fill:0.3877; --rank-color:#dc2626; --delay:0.32s;">
+              <div class="time-head">
+                <span class="time-name">NorMuon</span>
+                <span class="time-score">4m 59s</span>
+              </div>
+              <div class="time-bar"><span></span></div>
+            </div>
+            
+            <div class="time-row" style="--fill:0.4392; --rank-color:#7c3aed; --delay:0.40s;">
+              <div class="time-head">
+                <span class="time-name">Aurora</span>
+                <span class="time-score">5m 38s</span>
+              </div>
+              <div class="time-bar"><span></span></div>
+            </div>
+            
+            <div class="time-row" style="--fill:1.0000; --rank-color:#9333ea; --delay:0.48s;">
+              <div class="time-head">
+                <span class="time-name">Riemann Aurora</span>
+                <span class="time-score">12m 51s</span>
+              </div>
+              <div class="time-bar"><span></span></div>
+            </div>
+            
+        </div>
+      </div>
+    </section>
+
+    <section class="metrics-grid">
+      <div class="panel">
+        <div class="panel-title">
+          <div>
+            <h2>metrics table</h2>
+            <div class="panel-strong-label">checkpoint summary</div>
+          </div>
+          <div class="panel-note">best / final / speed</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>optimizer</th>
+                <th>best val</th>
+                <th>final val</th>
+                <th>best step</th>
+                <th>wall time</th>
+                <th>tokens/sec</th>
+              </tr>
+            </thead>
+            <tbody>
+              
             <tr>
-              <td>SF-Muon beta=0.6</td>
-              <td>1.524</td>
+              <td><span class="swatch" style="background:#ea580c"></span>U-NorMuon</td>
+              <td>1.506</td>
+              <td>1.539</td>
+              <td>10,500</td>
+              <td>4m 56s</td>
+              <td>414,654</td>
+            </tr>
+            
+            <tr>
+              <td><span class="swatch" style="background:#7c3aed"></span>Aurora</td>
+              <td>1.529</td>
+              <td>1.594</td>
+              <td>5,000</td>
+              <td>5m 38s</td>
+              <td>363,081</td>
+            </tr>
+            
+            <tr>
+              <td><span class="swatch" style="background:#9333ea"></span>Riemann Aurora</td>
               <td>1.531</td>
-              <td>14,000</td>
-              <td>6m 54s</td>
-              <td>297,111</td>
+              <td>1.604</td>
+              <td>5,000</td>
+              <td>12m 51s</td>
+              <td>159,455</td>
             </tr>
             
             <tr>
-              <td>amuse_muon_b0.4_r0.5</td>
-              <td>1.533</td>
-              <td>1.533</td>
-              <td>15,000</td>
-              <td>6m 56s</td>
-              <td>295,394</td>
-            </tr>
-            
-            <tr>
-              <td>AdamW</td>
+              <td><span class="swatch" style="background:#111827"></span>AdamW</td>
               <td>1.535</td>
               <td>1.614</td>
               <td>6,000</td>
-              <td>3m 26s</td>
-              <td>596,379</td>
+              <td>3m 27s</td>
+              <td>594,541</td>
             </tr>
             
             <tr>
-              <td>Torch Muon</td>
+              <td><span class="swatch" style="background:#2563eb"></span>Torch Muon</td>
               <td>1.541</td>
               <td>1.597</td>
               <td>5,000</td>
-              <td>3m 40s</td>
-              <td>558,295</td>
+              <td>3m 41s</td>
+              <td>556,093</td>
             </tr>
             
             <tr>
-              <td>MuonLike</td>
+              <td><span class="swatch" style="background:#0f766e"></span>MuonLike</td>
               <td>1.541</td>
               <td>1.600</td>
               <td>5,000</td>
-              <td>4m 37s</td>
-              <td>444,409</td>
+              <td>4m 35s</td>
+              <td>447,622</td>
             </tr>
             
             <tr>
-              <td>SF-Muon beta=0.9</td>
-              <td>1.544</td>
-              <td>1.544</td>
-              <td>15,000</td>
-              <td>6m 39s</td>
-              <td>307,748</td>
+              <td><span class="swatch" style="background:#dc2626"></span>NorMuon</td>
+              <td>1.554</td>
+              <td>1.650</td>
+              <td>9,000</td>
+              <td>4m 59s</td>
+              <td>411,289</td>
             </tr>
             
-            <tr>
-              <td>amuse_muon_b0.6_r0.5</td>
-              <td>1.552</td>
-              <td>1.552</td>
-              <td>15,000</td>
-              <td>7m 29s</td>
-              <td>273,583</td>
-            </tr>
-            
-            <tr>
-              <td>amuse_muon_b0.4_r0.8</td>
-              <td>1.573</td>
-              <td>1.573</td>
-              <td>15,000</td>
-              <td>7m 04s</td>
-              <td>289,868</td>
-            </tr>
-            
-            <tr>
-              <td>amuse_muon_b0.6_r0.8</td>
-              <td>1.582</td>
-              <td>1.582</td>
-              <td>15,000</td>
-              <td>7m 10s</td>
-              <td>285,964</td>
-            </tr>
-            
-      </tbody>
-    </table>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-    <section class="diag-grid">
-      <div class="figure">
-        <img src="beta_schedule.png" alt="AMUSE beta schedule">
-        <div class="caption"><strong>Figure 2.</strong> AMUSE beta schedule.</div>
-      </div>
-      <div class="figure">
-        <img src="amuse_distances.png" alt="AMUSE sequence distances">
-        <div class="caption"><strong>Figure 3.</strong> Relative x/y/z sequence distances.</div>
-      </div>
-      <div class="figure">
-        <img src="update_cosine.png" alt="AMUSE update cosine similarity">
-        <div class="caption"><strong>Figure 4.</strong> Cosine similarity between successive AMUSE x-updates.</div>
+      <div class="panel">
+        <div class="panel-title">
+          <div>
+            <h2>artifact note</h2>
+            <div class="panel-strong-label">what to share</div>
+          </div>
+          <div class="panel-note">static only</div>
+        </div>
+        <div class="read-card" style="grid-template-columns:1fr;">
+          <div class="read-pill">
+            <div class="read-label">png</div>
+            <div class="read-value">loss_curves.png</div>
+            <div class="read-note">clean static chart, good for README and quick sharing.</div>
+          </div>
+          <div class="read-pill">
+            <div class="read-label">html</div>
+            <div class="read-value">loss_report.html</div>
+            <div class="read-note">same numbers with ranking, runtime, and checkpoint table.</div>
+          </div>
+        </div>
       </div>
     </section>
   </main>
