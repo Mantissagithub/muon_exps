@@ -328,6 +328,118 @@ $$
 
 For non-matrix parameters, the wrapper falls back to AdamW-style updates on $$z_t$$, then uses the same $$x_t$$ averaging.
 
+## amuse-aurora
+
+AMUSE-Aurora keeps the same schedule-free state and second-moment preconditioning as AMUSE-Muon, but replaces the plain polar matrix update with Aurora's row-balanced polar step.
+
+For matrix parameters, start from the same preconditioned gradient:
+
+$$
+P_t = \frac{G_t}{\sqrt{\widehat v_t}+\epsilon}
+$$
+
+then compute:
+
+$$
+U_t = \mathrm{AuroraPolar}(P_t)
+$$
+
+where the current training variant uses the lightweight Aurora path: one row-normalization pass before the polar map, not the expensive Riemannian Aurora solver. the rest of the update is unchanged:
+
+$$
+U_t \leftarrow s(W_t)U_t
+$$
+
+$$
+U_t \leftarrow U_t
+\frac{\mathrm{rms}(P_t)}{\mathrm{rms}(U_t)+\epsilon}
+$$
+
+$$
+z_{t+1} = (1-\eta\lambda)z_t - \eta U_t
+$$
+
+## amuse-aurora-fast
+
+AMUSE-Aurora-Fast keeps the same outer schedule-free rule, but makes two speed-oriented mathematical changes inside the matrix path.
+
+first, it replaces the full matrix second moment with a factored approximation in the style of Adafactor / memory-efficient adaptive optimizers. for a matrix gradient $$G_t \in \mathbb{R}^{m \times n}$$:
+
+$$
+R_t = \beta_2 R_{t-1} + (1-\beta_2)\operatorname{mean}_{j}(G_t^2)
+$$
+
+$$
+C_t = \beta_2 C_{t-1} + (1-\beta_2)\operatorname{mean}_{i}(G_t^2)
+$$
+
+after bias correction:
+
+$$
+\widehat R_t = \frac{R_t}{1-\beta_2^t}, \qquad
+\widehat C_t = \frac{C_t}{1-\beta_2^t}
+$$
+
+the approximate second-moment matrix is:
+
+$$
+\widehat V_t =
+\frac{\widehat R_t \widehat C_t}{\operatorname{mean}(\widehat R_t)+\epsilon}
+$$
+
+so the preconditioned gradient becomes:
+
+$$
+P_t = \frac{G_t}{\sqrt{\widehat V_t}+\epsilon}
+$$
+
+this changes the matrix second-moment state from $$O(mn)$$ to $$O(m+n)$$ and reduces memory traffic in the optimizer step.
+
+second, it uses fewer polar iterations:
+
+$$
+U_t = \mathrm{AuroraPolar}_{K=4}(P_t)
+$$
+
+instead of the default five-step polar approximation. on CUDA, this fast path also computes the polar approximation in fp16 before casting the update back to the parameter dtype. this is an inexact polar update: the update is cheaper, but the approximation is rougher. the repo keeps RMS matching after the polar map:
+
+$$
+U_t \leftarrow U_t
+\frac{\|P_t\|_F}{\|U_t\|_F+\epsilon}
+$$
+
+then applies the same AMUSE update:
+
+$$
+z_{t+1} = (1-\eta\lambda)z_t - \eta U_t
+$$
+
+## amuse-aurora-fast2
+
+AMUSE-Aurora-Fast2 is the more aggressive Muon$$^2$$ / inexact-polar variant. it keeps the same factored second-moment preconditioner as AMUSE-Aurora-Fast, but uses only two polar iterations:
+
+$$
+U_t = \mathrm{AuroraPolar}_{K=2}(P_t)
+$$
+
+the mathematical bet is that the factored adaptive preconditioner improves the spectrum of $$P_t$$ enough that a rougher polar approximation is sufficient. this follows the same practical logic as Muon$$^2$$: improve the input to the polar/sign map, then spend fewer matrix multiplications on orthogonalization.
+
+the repo still keeps RMS matching:
+
+$$
+U_t \leftarrow U_t
+\frac{\|P_t\|_F}{\|U_t\|_F+\epsilon}
+$$
+
+on the current RTX 4060 Laptop GPU smoke, this variant is the best local speed/quality point among the AMUSE-Aurora variants. it is not yet a modded-nanogpt WR claim.
+
+references behind these choices:
+
+- Schedule-free averaging: Defazio et al., [The Road Less Scheduled](https://arxiv.org/abs/2405.15682).
+- Factored second moments: Shazeer and Stern, [Adafactor](https://arxiv.org/abs/1804.04235), and Luo et al., [CAME](https://arxiv.org/abs/2307.02047).
+- Inexact / fast Muon polar steps: Amsel et al., [The Polar Express](https://arxiv.org/abs/2505.16932), and the Gram Newton-Schulz implementation notes from Dao-AILab.
+- Adaptive preconditioning before orthogonalization: Liu et al., [Muon$$^2$$](https://arxiv.org/abs/2604.09967).
+
 The current character-lm run shows a useful distinction: AMUSE reaches the best single validation point, but the best AMUSE settings drift upward later in training. that means the method is strong on peak validation in this sweep, while `sf_adamw` is stronger on late-run stability.
 
 ## how to read the plots

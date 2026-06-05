@@ -2,7 +2,7 @@ import math
 
 import torch
 
-from polar import polar
+from polar import MODDED_NANOGPT_NS_COEFFS, polar
 
 try:
     from riemann_aurora import _riemannian_balanced_polar
@@ -198,6 +198,37 @@ class RiemannAurora(_MatrixOptimizer):
         return loss
 
 
+def _aurora_balanced_polar(
+    update: torch.Tensor,
+    eps: float,
+    pp_iterations: int = 1,
+    pp_beta: float = 0.5,
+    polar_steps: int = 5,
+    polar_dtype: torch.dtype | None = None,
+    polar_coeffs: tuple[tuple[float, float, float], ...] | None = None,
+) -> torch.Tensor:
+    m, n = update.shape
+    if m == n:
+        return polar(update, steps=polar_steps, eps=eps, compute_dtype=polar_dtype, coeffs=polar_coeffs)
+
+    transposed = m < n
+    work = update.mT if transposed else update
+    work = work.to(torch.float32)
+    rows, cols = work.shape
+    target_row_sq = cols / rows
+    row_norm = work.norm(dim=1, keepdim=True).clamp_min(eps)
+    d = 1.0 / row_norm
+    u = None
+    for k in range(pp_iterations):
+        u = polar(d * work, steps=polar_steps, eps=eps, compute_dtype=polar_dtype, coeffs=polar_coeffs)
+        if k < pp_iterations - 1:
+            row_sq = u.to(torch.float32).pow(2).sum(dim=1, keepdim=True).clamp_min(eps**2)
+            d = d * (target_row_sq / row_sq).pow(pp_beta)
+    if u is None:
+        u = polar(work, steps=polar_steps, eps=eps, compute_dtype=polar_dtype, coeffs=polar_coeffs)
+    return u.mT if transposed else u
+
+
 def _as_named_entries(named_params):
     entries = list(named_params)
     entries.sort(key=lambda item: item[0])
@@ -233,6 +264,11 @@ class AMUSEMuon:
         fallback_betas=(0.9, 0.95),
         fallback_eps=1e-8,
         debug_checks=False,
+        track_update_cosine=True,
+        factored_second_moment=False,
+        polar_steps=5,
+        polar_dtype=None,
+        polar_coeffs=None,
     ):
         self.matrix_entries = _as_named_entries(matrix_named_params)
         self.other_entries = _as_named_entries(other_named_params)
@@ -251,6 +287,11 @@ class AMUSEMuon:
         self.fallback_beta1, self.fallback_beta2 = fallback_betas
         self.fallback_eps = fallback_eps
         self.debug_checks = debug_checks
+        self.track_update_cosine = track_update_cosine
+        self.factored_second_moment = factored_second_moment
+        self.polar_steps = polar_steps
+        self.polar_dtype = polar_dtype
+        self.polar_coeffs = polar_coeffs
         self.step_idx = 0
         self.c_t = 0.0
         self.c_t0 = None
@@ -269,11 +310,16 @@ class AMUSEMuon:
                 "x": p.detach().clone(),
             }
             if id(p) in self.matrix_ids:
-                self.state[p]["exp_avg_sq"] = torch.zeros_like(p)
+                if self.factored_second_moment:
+                    self.state[p]["exp_avg_sq_row"] = torch.zeros(p.size(0), 1, device=p.device, dtype=p.dtype)
+                    self.state[p]["exp_avg_sq_col"] = torch.zeros(1, p.size(1), device=p.device, dtype=p.dtype)
+                else:
+                    self.state[p]["exp_avg_sq"] = torch.zeros_like(p)
             else:
                 self.state[p]["exp_avg"] = torch.zeros_like(p)
                 self.state[p]["exp_avg_sq"] = torch.zeros_like(p)
-        self._x_prev = self._flatten_x_snapshot()
+        if self.track_update_cosine:
+            self._x_prev = self._flatten_x_snapshot()
 
     def zero_grad(self, set_to_none=True):
         for p in self.params:
@@ -326,21 +372,26 @@ class AMUSEMuon:
             grad = p.grad
 
             z.mul_(1.0 - self.lr * self.weight_decay)
-            exp_avg_sq = state["exp_avg_sq"]
-            # amuse matrix path does not use adam first moment, only the second moment
-            exp_avg_sq.mul_(self.fallback_beta2).addcmul_(grad, grad, value=1.0 - self.fallback_beta2)
-
             t = self.step_idx + 1
             bias_correction2 = 1.0 - self.fallback_beta2**t
-            denom = exp_avg_sq.sqrt().div_(math.sqrt(bias_correction2)).add_(self.fallback_eps)
-            update = grad / denom
-            update = polar(update, eps=self.eps)
-            update.mul_(math.sqrt(max(1.0, z.size(0) / z.size(1))))
+            if self.factored_second_moment:
+                grad_sq = grad.square()
+                row = state["exp_avg_sq_row"]
+                col = state["exp_avg_sq_col"]
+                row.mul_(self.fallback_beta2).add_(grad_sq.mean(dim=1, keepdim=True), alpha=1.0 - self.fallback_beta2)
+                col.mul_(self.fallback_beta2).add_(grad_sq.mean(dim=0, keepdim=True), alpha=1.0 - self.fallback_beta2)
+                preconditioned = grad.mul((bias_correction2 * row.mean().clamp_min(self.fallback_eps)).sqrt())
+                preconditioned.div_(row.sqrt().clamp_min(self.fallback_eps))
+                preconditioned.div_(col.sqrt().clamp_min(self.fallback_eps))
+            else:
+                exp_avg_sq = state["exp_avg_sq"]
+                # amuse matrix path does not use adam first moment, only the second moment
+                exp_avg_sq.mul_(self.fallback_beta2).addcmul_(grad, grad, value=1.0 - self.fallback_beta2)
+                denom = exp_avg_sq.sqrt().div_(math.sqrt(bias_correction2)).add_(self.fallback_eps)
+                preconditioned = grad / denom
+            update = self._matrix_update(preconditioned, z)
             # match the preconditioned grad rms before the muon step, same idea as d-muon
-            target_rms = grad.div(denom).norm().item() / math.sqrt(grad.numel())
-            update_rms = update.norm().item() / math.sqrt(update.numel())
-            if update_rms > 0.0:
-                update.mul_(target_rms / update_rms)
+            update.mul_(preconditioned.norm() / update.norm().clamp_min(self.eps))
             z.add_(update, alpha=-self.lr)
             self._update_x(state, z, x_weight)
 
@@ -370,13 +421,25 @@ class AMUSEMuon:
             # this is the c_T0 anchor we keep for beta growth after warmup
             self.c_t0 = self.c_t
 
-        self.last_update_cosine = self._update_cosine()
+        if self.track_update_cosine:
+            self.last_update_cosine = self._update_cosine()
         self.step_idx += 1
         self.prepare_train_step()
 
     def _update_x(self, state, z, x_weight):
         x = state["x"]
         x.lerp_(z, x_weight)
+
+    def _matrix_update(self, preconditioned_grad, z):
+        update = polar(
+            preconditioned_grad,
+            steps=self.polar_steps,
+            eps=self.eps,
+            compute_dtype=self.polar_dtype,
+            coeffs=self.polar_coeffs,
+        )
+        update.mul_(math.sqrt(max(1.0, z.size(0) / z.size(1))))
+        return update
 
     def _flatten_x_snapshot(self):
         return torch.cat(
@@ -454,6 +517,60 @@ class AMUSEMuon:
         }
 
 
+class AMUSEAurora(AMUSEMuon):
+    """AMUSE schedule-free state with Aurora row-balanced matrix updates."""
+
+    def __init__(self, *args, pp_iterations=1, pp_beta=0.5, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pp_iterations = pp_iterations
+        self.pp_beta = pp_beta
+
+    def _matrix_update(self, preconditioned_grad, z):
+        update = _aurora_balanced_polar(
+            preconditioned_grad,
+            eps=self.eps,
+            pp_iterations=self.pp_iterations,
+            pp_beta=self.pp_beta,
+            polar_steps=self.polar_steps,
+            polar_dtype=self.polar_dtype,
+            polar_coeffs=self.polar_coeffs,
+        )
+        update.mul_(math.sqrt(max(1.0, z.size(0) / z.size(1))))
+        return update.to(dtype=z.dtype)
+
+
+class AMUSEAuroraFast(AMUSEAurora):
+    """Lower-bandwidth AMUSE-Aurora with factored matrix second moments."""
+
+    def __init__(self, *args, polar_steps=4, polar_dtype=torch.float16, **kwargs):
+        kwargs.setdefault("factored_second_moment", True)
+        kwargs.setdefault("track_update_cosine", False)
+        super().__init__(*args, polar_steps=polar_steps, polar_dtype=polar_dtype, **kwargs)
+
+
+class AMUSEAuroraFast2(AMUSEAurora):
+    """More aggressive fast variant: factored preconditioning with few polar steps.
+
+    At a small step budget the single fixed "simple" quintic (3.4445, -4.7750,
+    2.0315) under-orthogonalizes, because those coefficients only converge after
+    ~5 steps. This variant instead drives the Newton-Schulz iteration with the
+    modded-nanogpt speedrun's per-step schedule, whose composed polynomials lift the
+    singular values toward 1 much faster. In a polar-factor-distance benchmark it is
+    never worse than the fixed coefficients and clearly better on higher-rank
+    matrices, while remaining monotone and stable -- unlike the more aggressive Polar
+    Express / CANS schedules, which overshoot and diverge at 2-3 steps. Compute is
+    bf16 rather than fp16: the leading coefficients produce large intermediate
+    magnitudes that can overflow fp16's narrow range, and bf16 matches the precision
+    the speedrun coefficients were tuned in.
+    """
+
+    def __init__(self, *args, polar_steps=2, polar_dtype=torch.bfloat16, **kwargs):
+        kwargs.setdefault("factored_second_moment", True)
+        kwargs.setdefault("track_update_cosine", False)
+        kwargs.setdefault("polar_coeffs", MODDED_NANOGPT_NS_COEFFS)
+        super().__init__(*args, polar_steps=polar_steps, polar_dtype=polar_dtype, **kwargs)
+
+
 class ScheduleFreeAdamW:
     """Schedule-free AdamW baseline with explicit z/x state."""
 
@@ -470,6 +587,7 @@ class ScheduleFreeAdamW:
         warmup_steps=100,
         fixed_beta=None,
         debug_checks=False,
+        track_update_cosine=True,
     ):
         self.param_entries = _as_named_entries(named_params)
         self.params = [param for _, param in self.param_entries]
@@ -483,6 +601,7 @@ class ScheduleFreeAdamW:
         self.warmup_steps = max(1, int(warmup_steps))
         self.fixed_beta = fixed_beta
         self.debug_checks = debug_checks
+        self.track_update_cosine = track_update_cosine
         self.step_idx = 0
         self.c_t = 0.0
         self.c_t0 = None
@@ -502,7 +621,8 @@ class ScheduleFreeAdamW:
                 "exp_avg": torch.zeros_like(p),
                 "exp_avg_sq": torch.zeros_like(p),
             }
-        self._x_prev = self._flatten_x_snapshot()
+        if self.track_update_cosine:
+            self._x_prev = self._flatten_x_snapshot()
 
     def zero_grad(self, set_to_none=True):
         for p in self.params:
@@ -573,7 +693,8 @@ class ScheduleFreeAdamW:
             # freeze the warmup boundary in c-space, then grow beta from there
             self.c_t0 = self.c_t
 
-        self.last_update_cosine = self._update_cosine()
+        if self.track_update_cosine:
+            self.last_update_cosine = self._update_cosine()
         self.step_idx += 1
         self.prepare_train_step()
 

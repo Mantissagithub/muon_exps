@@ -26,6 +26,9 @@ DISPLAY_NAMES = {
     "adafactor": "Adafactor",
     "sf_adamw": "SF-AdamW",
     "amuse_muon": "AMUSE-Muon",
+    "amuse_aurora": "AMUSE-Aurora",
+    "amuse_aurora_fast": "AMUSE-Aurora Fast",
+    "amuse_aurora_fast2": "AMUSE-Aurora Fast2",
     "sf_muon_fixed_beta_0.6": "SF-Muon beta=0.6",
     "sf_muon_fixed_beta_0.9": "SF-Muon beta=0.9",
     "lion": "Lion",
@@ -48,6 +51,9 @@ PALETTE = {
     "adafactor": "#bcbd22",
     "sf_adamw": "#2ca02c",
     "amuse_muon": "#e41a1c",
+    "amuse_aurora": "#377eb8",
+    "amuse_aurora_fast": "#ff7f00",
+    "amuse_aurora_fast2": "#a65628",
     "sf_muon_fixed_beta_0.6": "#4daf4a",
     "sf_muon_fixed_beta_0.9": "#984ea3",
     "lion": "#ca8a04",
@@ -202,6 +208,9 @@ def focus_subset(summaries):
         "amuse_muon_b0.6_r0.5",
         "amuse_muon_b0.6_r0.8",
         "amuse_muon",
+        "amuse_aurora",
+        "amuse_aurora_fast",
+        "amuse_aurora_fast2",
     ]
     focus = [available[name] for name in preferred if name in available]
     if focus:

@@ -15,7 +15,18 @@ if str(ROOT) not in sys.path:
 
 from experiments.char_lm.dataset import CharDataset, load_tinyshakespeare
 from experiments.char_lm.model import TinyCharTransformer
-from optimizers import AMUSEMuon, Aurora, MuonLike, NorMuon, RiemannAurora, ScheduleFreeAdamW, UNorMuon
+from optimizers import (
+    AMUSEAurora,
+    AMUSEAuroraFast,
+    AMUSEAuroraFast2,
+    AMUSEMuon,
+    Aurora,
+    MuonLike,
+    NorMuon,
+    RiemannAurora,
+    ScheduleFreeAdamW,
+    UNorMuon,
+)
 
 
 AMUSE_VARIANTS = {
@@ -33,6 +44,9 @@ OPTIMIZERS = [
     "torch_muon",
     "sf_adamw",
     "amuse_muon",
+    "amuse_aurora",
+    "amuse_aurora_fast",
+    "amuse_aurora_fast2",
     *AMUSE_VARIANTS.keys(),
 ]
 
@@ -56,6 +70,8 @@ def parse_args():
     p.add_argument("--amuse-beta1", type=float, default=0.4)
     p.add_argument("--amuse-rho", type=float, default=0.5)
     p.add_argument("--amuse-debug-checks", action="store_true")
+    p.add_argument("--amuse-track-cosine", action="store_true")
+    p.add_argument("--amuse-eval-components", action="store_true")
     p.add_argument("--seed", type=int, default=1337)
     p.add_argument("--dataset", type=Path, default=ROOT / "data" / "tinyshakespeare" / "input.txt")
     p.add_argument("--out-dir", type=Path, default=ROOT / "artifacts" / "char_lm")
@@ -154,6 +170,7 @@ def make_optimizer_stack(name: str, model: torch.nn.Module, args):
                 rho=args.amuse_rho,
                 warmup_steps=args.warmup_steps,
                 debug_checks=args.amuse_debug_checks,
+                track_update_cosine=args.amuse_track_cosine,
             )
         ]
     if name == "amuse_muon":
@@ -167,6 +184,49 @@ def make_optimizer_stack(name: str, model: torch.nn.Module, args):
                 rho=args.amuse_rho,
                 warmup_steps=args.warmup_steps,
                 debug_checks=args.amuse_debug_checks,
+                track_update_cosine=args.amuse_track_cosine,
+            )
+        ]
+    if name == "amuse_aurora":
+        return [
+            AMUSEAurora(
+                matrix_named_params,
+                other_named_params,
+                lr=args.amuse_lr,
+                weight_decay=args.weight_decay,
+                beta1=args.amuse_beta1,
+                rho=args.amuse_rho,
+                warmup_steps=args.warmup_steps,
+                debug_checks=args.amuse_debug_checks,
+                track_update_cosine=args.amuse_track_cosine,
+            )
+        ]
+    if name == "amuse_aurora_fast":
+        return [
+            AMUSEAuroraFast(
+                matrix_named_params,
+                other_named_params,
+                lr=args.amuse_lr,
+                weight_decay=args.weight_decay,
+                beta1=args.amuse_beta1,
+                rho=args.amuse_rho,
+                warmup_steps=args.warmup_steps,
+                debug_checks=args.amuse_debug_checks,
+                track_update_cosine=args.amuse_track_cosine,
+            )
+        ]
+    if name == "amuse_aurora_fast2":
+        return [
+            AMUSEAuroraFast2(
+                matrix_named_params,
+                other_named_params,
+                lr=args.amuse_lr,
+                weight_decay=args.weight_decay,
+                beta1=args.amuse_beta1,
+                rho=args.amuse_rho,
+                warmup_steps=args.warmup_steps,
+                debug_checks=args.amuse_debug_checks,
+                track_update_cosine=args.amuse_track_cosine,
             )
         ]
     if variant is not None:
@@ -181,6 +241,7 @@ def make_optimizer_stack(name: str, model: torch.nn.Module, args):
                 warmup_steps=args.warmup_steps,
                 fixed_beta=variant["fixed_beta"] if math.isfinite(variant["fixed_beta"]) else None,
                 debug_checks=args.amuse_debug_checks,
+                track_update_cosine=args.amuse_track_cosine,
             )
         ]
     return make_optimizers(name, model, args.lr, args.weight_decay)
@@ -195,7 +256,7 @@ def find_amuse(optimizers):
 
 def optimizer_metadata(name: str, args):
     variant = AMUSE_VARIANTS.get(name)
-    if name == "amuse_muon":
+    if name in {"amuse_muon", "amuse_aurora", "amuse_aurora_fast", "amuse_aurora_fast2"}:
         return {"beta1": args.amuse_beta1, "rho": args.amuse_rho, "fixed_beta": float("nan")}
     if name == "sf_adamw":
         return {"beta1": args.amuse_beta1, "rho": args.amuse_rho, "fixed_beta": float("nan")}
@@ -210,12 +271,12 @@ def estimate_loss(model, data, batch_size, device, eval_iters, seed):
     out = {}
     for split in ["train", "val"]:
         gen = torch.Generator().manual_seed(seed + (0 if split == "train" else 10_000))
-        losses = torch.empty(eval_iters)
+        total_loss = torch.zeros((), device=device)
         for k in range(eval_iters):
             x, y = data.get_batch(split, batch_size, device, gen)
             _, loss = model(x, y)
-            losses[k] = loss.item()
-        out[split] = losses.mean().item()
+            total_loss.add_(loss.detach())
+        out[split] = total_loss.div(eval_iters).item()
     model.train()
     return out
 
@@ -224,13 +285,13 @@ def estimate_loss(model, data, batch_size, device, eval_iters, seed):
 def estimate_val_loss(model, data, batch_size, device, eval_iters, seed):
     model.eval()
     gen = torch.Generator().manual_seed(seed)
-    losses = torch.empty(eval_iters)
+    total_loss = torch.zeros((), device=device)
     for k in range(eval_iters):
         x, y = data.get_batch("val", batch_size, device, gen)
         _, loss = model(x, y)
-        losses[k] = loss.item()
+        total_loss.add_(loss.detach())
     model.train()
-    return losses.mean().item()
+    return total_loss.div(eval_iters).item()
 
 
 def run_one(name, base_state, data, args, device):
@@ -266,14 +327,16 @@ def run_one(name, base_state, data, args, device):
                 amuse.use_x_params()
             losses = estimate_loss(model, data, args.batch_size, device, args.eval_iters, args.seed + step)
             val_loss_x = losses["val"]
-            if amuse is not None:
+            if amuse is not None and args.amuse_eval_components:
                 amuse.use_z_params()
                 val_loss_z = estimate_val_loss(model, data, args.batch_size, device, args.eval_iters, args.seed + step + 10_000)
                 amuse.use_y_params()
                 val_loss_y = estimate_val_loss(model, data, args.batch_size, device, args.eval_iters, args.seed + step + 20_000)
             best_val = min(best_val, val_loss_x)
             elapsed = time.perf_counter() - t0
-            metrics = amuse.metrics() if amuse is not None else {}
+            metrics = amuse.metrics() if amuse is not None and args.amuse_eval_components else {}
+            if amuse is not None and not args.amuse_eval_components:
+                metrics = {"beta_t": amuse.last_beta}
             rows.append({
                 "optimizer": name,
                 "beta1": meta["beta1"],

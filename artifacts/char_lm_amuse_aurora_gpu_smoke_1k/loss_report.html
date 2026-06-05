@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TinyShakespeare optimizer report</title>
+  <style>
+    body {
+      margin: 0;
+      background: #ffffff;
+      color: #111111;
+      font-family: "DejaVu Serif", "Times New Roman", serif;
+    }
+    main {
+      width: min(1120px, calc(100vw - 40px));
+      margin: 28px auto 40px;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 400;
+      margin: 0 0 6px;
+    }
+    .deck {
+      color: #333333;
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 18px;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin: 20px 0;
+    }
+    .metric {
+      border: 1px solid #d5d5d5;
+      padding: 10px 12px;
+    }
+    .metric .k {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #666666;
+    }
+    .metric .v {
+      margin-top: 6px;
+      font-size: 18px;
+    }
+    .figure {
+      margin: 18px 0 26px;
+    }
+    .figure img {
+      width: 100%;
+      display: block;
+      border: 1px solid #d5d5d5;
+    }
+    .caption {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #333333;
+      line-height: 1.45;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #dcdcdc;
+      padding: 8px 10px;
+      text-align: left;
+    }
+    th {
+      font-weight: 600;
+      background: #f7f7f7;
+    }
+    .diag-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 22px;
+    }
+    .diag-grid img {
+      width: 100%;
+      display: block;
+      border: 1px solid #d5d5d5;
+    }
+    @media (max-width: 860px) {
+      .metrics, .diag-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>TinyShakespeare optimizer report</h1>
+    <div class="deck">
+      Results rendered directly from <code>artifacts/char_lm/results.csv</code>.
+      The main figure compares validation loss across the optimizers present in that file.
+    </div>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="k">Best run</div>
+        <div class="v">AMUSE-Aurora · 2.052</div>
+      </div>
+      <div class="metric">
+        <div class="k">Best step</div>
+        <div class="v">1,000</div>
+      </div>
+      <div class="metric">
+        <div class="k">Margin to next</div>
+        <div class="v">0.022</div>
+      </div>
+    </div>
+
+    <section class="figure">
+      <img src="loss_curves.png" alt="Validation loss comparison">
+      <div class="caption">
+        <strong>Figure 1.</strong> Validation loss against training step for the benchmarked optimizers.
+        The left panel shows every optimizer present in the CSV; the right panel focuses on the main comparison set when available.
+      </div>
+    </section>
+
+    <section class="figure">
+      <img src="training_loss_curves.png" alt="Training loss comparison">
+      <div class="caption">
+        <strong>Figure 2.</strong> Training loss against training step for the same optimizer runs.
+        This separates fit speed from validation behavior on the small TinyShakespeare split.
+      </div>
+    </section>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Optimizer</th>
+          <th>Best val</th>
+          <th>Train at best</th>
+          <th>Final val</th>
+          <th>Final train</th>
+          <th>Best step</th>
+          <th>Wall time</th>
+          <th>Tokens/sec</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+            <tr>
+              <td>AMUSE-Aurora</td>
+              <td>2.052</td>
+              <td>1.995</td>
+              <td>2.052</td>
+              <td>1.995</td>
+              <td>1,000</td>
+              <td>3.9s</td>
+              <td>259,313</td>
+            </tr>
+            
+            <tr>
+              <td>AMUSE-Muon</td>
+              <td>2.075</td>
+              <td>2.018</td>
+              <td>2.075</td>
+              <td>2.018</td>
+              <td>1,000</td>
+              <td>4.1s</td>
+              <td>248,327</td>
+            </tr>
+            
+            <tr>
+              <td>AMUSE-Aurora Fast</td>
+              <td>2.093</td>
+              <td>2.051</td>
+              <td>2.095</td>
+              <td>2.026</td>
+              <td>750</td>
+              <td>3.8s</td>
+              <td>269,721</td>
+            </tr>
+            
+      </tbody>
+    </table>
+
+    <section class="diag-grid">
+      <div class="figure">
+        <img src="beta_schedule.png" alt="AMUSE beta schedule">
+        <div class="caption"><strong>Figure 3.</strong> AMUSE beta schedule.</div>
+      </div>
+      <div class="figure">
+        <img src="amuse_distances.png" alt="AMUSE sequence distances">
+        <div class="caption"><strong>Figure 4.</strong> Relative x/y/z sequence distances.</div>
+      </div>
+      <div class="figure">
+        <img src="update_cosine.png" alt="AMUSE update cosine similarity">
+        <div class="caption"><strong>Figure 5.</strong> Cosine similarity between successive AMUSE x-updates.</div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -216,6 +216,50 @@ uv run python experiments/char_lm/plot_results.py \
 
 it writes results and plots to `artifacts/char_lm_amuse_fix/`.
 
+`amuse_aurora` is the experimental combined variant: it keeps AMUSE's schedule-free/preconditioned training path, but uses a lightweight Aurora row-balanced polar update for matrix parameters. `amuse_aurora_fast` adds the speed-oriented math: factored matrix second moments and a four-step inexact polar approximation. AMUSE diagnostics now skip per-step update-cosine snapshots and extra `z/y` validation by default to avoid synchronizing training on metric collection; pass `--amuse-track-cosine` and `--amuse-eval-components` when those diagnostics are needed.
+
+local RTX 4060 Laptop GPU smoke for the combined variants:
+
+```bash
+uv run python experiments/char_lm/train_optimizer_variants.py \
+  --optimizers amuse_muon,amuse_aurora,amuse_aurora_fast,amuse_aurora_fast2 \
+  --steps 200 \
+  --eval-interval 50 \
+  --eval-iters 5 \
+  --batch-size 16 \
+  --block-size 64 \
+  --n-layer 1 \
+  --n-head 2 \
+  --n-embd 64 \
+  --warmup-steps 50 \
+  --out-dir artifacts/char_lm_amuse_aurora_gpu_smoke
+```
+
+current 200-step GPU smoke result: `amuse_aurora_fast` reached `2.3865` best validation in `0.8s`, `amuse_aurora` reached `2.3913` in `0.9s`, and `amuse_muon` reached `2.3926` in `1.0s`.
+
+a longer 1k-step GPU smoke in `artifacts/char_lm_amuse_aurora_gpu_smoke_1k_math_fast` is the cleaner read:
+
+| optimizer | best val | step of best | wall time |
+|-----------|---------:|-------------:|----------:|
+| amuse_aurora_fast2 | 2.0332 | 1000 | 3.5s |
+| amuse_aurora | 2.0524 | 1000 | 3.9s |
+| amuse_muon | 2.0748 | 1000 | 4.0s |
+| amuse_aurora_fast | 2.0929 | 750 | 4.0s |
+
+on this small GPU run, `amuse_aurora_fast2` is the best local speed/quality point: it uses factored second moments plus only two inexact polar steps, and it beats both AMUSE-Muon and the full AMUSE-Aurora variant on validation and wall time. this is a local char-LM result, not a modded-nanogpt WR claim.
+
+### modded-nanogpt speedrun note
+
+the current `KellerJordan/modded-nanogpt` record path already uses Polar Express, NorMuon, sharded parameter banks, mixed precision, async comms, and architecture-level speedrun changes. directly adding AMUSE schedule-free `x/z/y` state there would add parameter copies and is not a good wall-clock WR bet.
+
+for a real integration target, this repo includes `patches/modded_nanogpt_aurora_balance.patch`, an env-gated Aurora row-balance ablation for upstream `train_gpt.py`. local GPU probe:
+
+```bash
+uv run python scripts/nanogpt_speedrun_aurora_probe.py --batch 8 --rows 768 --cols 768
+```
+
+on the RTX 4060 Laptop GPU, the probe showed `baseline_normuon_ms=0.1337`, `with_aurora_balance_ms=0.1543`, and no row-CV improvement. so the patch is useful as an ablation, but not recommended as a default WR wall-clock path. for the speedrun target, the practical optimizer-side result here is: keep the lightweight `amuse_aurora` idea for this repo's AMUSE experiments, but do not transplant AMUSE state into modded-nanogpt unless a full 8xH100 run shows fewer required steps.
+
 current saved run from `artifacts/char_lm_amuse_fix/summary.md`:
 
 | optimizer | best val | train at best | final val | final train | best step | wall time |

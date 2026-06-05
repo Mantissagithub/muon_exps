@@ -1,0 +1,45 @@
+diff --git a/train_gpt.py b/train_gpt.py
+index a9b3f62..41257bb 100644
+--- a/train_gpt.py
++++ b/train_gpt.py
+@@ -24,6 +24,8 @@ import torch
+ import triton
+ import numpy as np
+ 
++SPEEDRUN_AURORA_BALANCE = os.environ.get("SPEEDRUN_AURORA_BALANCE", "0") == "1"
++
+ torch.empty(
+     1, device=f"cuda:{os.environ['LOCAL_RANK']}", requires_grad=True
+ ).backward()  # prevents a bug on some systems
+@@ -882,6 +884,8 @@ class NorMuonAndAdam:
+         v_chunk = NorMuonAndAdam._apply_normuon_variance_reduction(
+             v_chunk, p_state["second_momentum_buffer"], p_cfg.beta2, red_dim
+         )
++        if SPEEDRUN_AURORA_BALANCE:
++            v_chunk = NorMuonAndAdam._apply_aurora_row_balance(v_chunk)
+ 
+         # Update parameter, in place, with cautious weight decay
+         param_view = param.data.view(p_cfg.reshape)
+@@ -939,6 +943,22 @@ class NorMuonAndAdam:
+         final_scale = step_size * (v_norm / v_norm_new.clamp_min_(1e-10))
+         return v_chunk.mul_(final_scale.type_as(v_chunk))
+ 
++    @staticmethod
++    @torch.compile(dynamic=False, fullgraph=True)
++    def _apply_aurora_row_balance(v_chunk):
++        """
++        One cheap Aurora-style post-balance pass.
++
++        This is intentionally lighter than full Aurora: it does not rerun the
++        polar map. It equalizes per-row energy after NorMuon's variance
++        reduction, aiming to get Aurora's dead-row protection with one
++        row-stat reduction and one broadcast multiply.
++        """
++        row_sq = v_chunk.float().square().mean(dim=-1, keepdim=True).clamp_min_(1e-10)
++        target = row_sq.mean(dim=-2, keepdim=True)
++        scale = (target / row_sq).sqrt_().type_as(v_chunk)
++        return v_chunk.mul_(scale)
++
+ # -----------------------------------------------------------------------------
+ # PyTorch nn.Module definitions for the model
+ 
